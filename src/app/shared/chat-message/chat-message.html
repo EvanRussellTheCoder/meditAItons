@@ -1,0 +1,46 @@
+<article
+  class="message-row"
+  [attr.aria-label]="
+    message().author === 'marcus' ? 'Message from Marcus Aurelius' : 'Your message'
+  "
+>
+  @if (message().author === 'marcus') {
+    <img class="avatar" src="assets/marcus-aurelius.png" alt="" width="56" height="56" />
+  }
+
+  <div class="message-column">
+    <div class="bubble">{{ message().content }}</div>
+
+    @if (message().citations?.length) {
+      <section class="citations" aria-label="Quoted passages from Meditations">
+        <span class="citations-label">From Meditations</span>
+        @for (citation of message().citations; track citation.canonicalRef) {
+          <figure class="source-passage">
+            <blockquote>
+              <em>{{ citation.quote }}</em>
+            </blockquote>
+            <figcaption>
+              <a [href]="citation.sourceUrl" target="_blank" rel="noopener noreferrer">
+                — Meditations {{ citation.canonicalRef }}
+              </a>
+            </figcaption>
+          </figure>
+        }
+      </section>
+    }
+
+    @if (preferences.showTimestamps()) {
+      <div class="message-meta">
+        @if (message().author === 'marcus') {
+          <span>Marcus Aurelius</span><span aria-hidden="true">•</span>
+        }
+        <time [attr.datetime]="message().createdAt.toISOString()">{{
+          message().createdAt | date: 'shortTime'
+        }}</time>
+        @if (message().status === 'read') {
+          <span class="read-status" aria-label="Read">✓</span>
+        }
+      </div>
+    }
+  </div>
+</article>

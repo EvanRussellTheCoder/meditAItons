@@ -1,0 +1,59 @@
+<section class="library-page page-enter" aria-labelledby="library-title">
+  <header class="page-heading">
+    <span class="eyebrow">Collected wisdom</span>
+    <h1 id="library-title">The library</h1>
+    <p>Passages to return to when the mind needs a steadier hand.</p>
+  </header>
+
+  <div class="search-field">
+    <app-icon name="search" />
+    <label class="sr-only" for="passage-search">Search passages</label>
+    <input
+      id="passage-search"
+      type="search"
+      placeholder="Search the Meditations…"
+      [value]="search()"
+      (input)="updateSearch($event)"
+    />
+  </div>
+
+  <div class="themes" aria-label="Filter by theme">
+    @for (theme of themes; track theme) {
+      <button
+        type="button"
+        [class.active]="activeTheme() === theme"
+        (click)="activeTheme.set(theme)"
+      >
+        {{ theme }}
+      </button>
+    }
+  </div>
+
+  <div class="passage-list" aria-live="polite">
+    @for (passage of passages(); track passage.id) {
+      <article class="passage-card">
+        <div class="passage-topline">
+          <span>{{ passage.theme }}</span>
+          <button
+            type="button"
+            [class.saved]="bookmarked().has(passage.id)"
+            [attr.aria-label]="
+              bookmarked().has(passage.id) ? 'Remove bookmark' : 'Bookmark passage'
+            "
+            (click)="toggleBookmark(passage.id)"
+          >
+            <app-icon name="bookmark" />
+          </button>
+        </div>
+        <blockquote>{{ passage.text }}</blockquote>
+        <cite>— {{ passage.book }}</cite>
+      </article>
+    } @empty {
+      <div class="empty-state">
+        <app-icon name="book" />
+        <h2>No passage found</h2>
+        <p>Try another word or theme.</p>
+      </div>
+    }
+  </div>
+</section>

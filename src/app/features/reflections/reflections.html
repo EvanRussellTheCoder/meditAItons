@@ -1,0 +1,45 @@
+<section class="reflection-page page-enter" aria-labelledby="reflection-title">
+  <header class="page-heading">
+    <span class="eyebrow">Evening practice</span>
+    <h1 id="reflection-title">Examine the day</h1>
+    <p>Not to judge yourself, but to see clearly—and begin again with intention.</p>
+  </header>
+
+  <div class="prompt-list" aria-label="Reflection prompts">
+    @for (prompt of prompts; track prompt.number) {
+      <button
+        type="button"
+        class="prompt-card"
+        [class.active]="selectedPrompt().number === prompt.number"
+        (click)="selectPrompt(prompt)"
+      >
+        <span class="prompt-number">{{ prompt.number }}</span>
+        <span
+          ><strong>{{ prompt.title }}</strong
+          ><small>{{ prompt.question }}</small></span
+        >
+        <app-icon name="chevron" />
+      </button>
+    }
+  </div>
+
+  <div class="writing-card">
+    <div class="writing-label">
+      <app-icon name="leaf" />
+      <label for="reflection-entry">{{ selectedPrompt().question }}</label>
+    </div>
+    <textarea
+      id="reflection-entry"
+      rows="6"
+      placeholder="Write without judgment…"
+      [value]="entry()"
+      (input)="updateEntry($event)"
+    ></textarea>
+    <div class="writing-actions">
+      <span>{{ entry().length }} characters</span>
+      <button type="button" [disabled]="!entry().trim()" (click)="save()">
+        {{ saved() ? 'Reflection saved' : 'Save reflection' }}
+      </button>
+    </div>
+  </div>
+</section>

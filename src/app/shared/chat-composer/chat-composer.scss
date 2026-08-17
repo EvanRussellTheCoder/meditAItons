@@ -1,0 +1,96 @@
+.composer-shell {
+  padding: 0.85rem 0.9rem 0.65rem;
+  background: linear-gradient(120deg, rgb(184 150 93 / 3%), transparent), rgb(17 19 16 / 90%);
+  border: 1px solid rgb(184 150 93 / 42%);
+  border-radius: 0.7rem;
+  box-shadow:
+    inset 0 0 0 1px rgb(0 0 0 / 40%),
+    0 14px 36px rgb(0 0 0 / 18%);
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.composer-shell:focus-within {
+  border-color: rgb(210 177 113 / 72%);
+  box-shadow:
+    inset 0 0 0 1px rgb(0 0 0 / 40%),
+    0 0 0 3px rgb(184 150 93 / 8%);
+}
+
+textarea {
+  display: block;
+  width: 100%;
+  min-height: 2.75rem;
+  max-height: 8.25rem;
+  padding: 0.1rem 0.1rem 0.4rem;
+  resize: none;
+  overflow-y: auto;
+  color: var(--parchment);
+  background: transparent;
+  border: 0;
+  outline: 0;
+  font-family: var(--font-display);
+  font-size: 1rem;
+  line-height: 1.45;
+}
+
+textarea::placeholder {
+  color: #817a6b;
+}
+
+.composer-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+.hint {
+  color: #625e53;
+  font-size: 0.64rem;
+}
+
+button {
+  display: grid;
+  flex: 0 0 2.35rem;
+  width: 2.35rem;
+  height: 2.35rem;
+  padding: 0;
+  place-items: center;
+  color: var(--bronze-bright);
+  background: transparent;
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+  transition:
+    color 160ms ease,
+    background 160ms ease,
+    transform 160ms ease;
+}
+
+button:hover:not(:disabled) {
+  color: #f1d59b;
+  background: rgb(184 150 93 / 10%);
+  transform: translate(2px, -2px);
+}
+
+button:disabled {
+  color: #5e594d;
+  cursor: not-allowed;
+}
+
+button app-icon {
+  width: 1.35rem;
+  height: 1.35rem;
+}
+
+@media (max-width: 480px) {
+  .hint {
+    display: none;
+  }
+
+  .composer-footer {
+    justify-content: flex-end;
+  }
+}

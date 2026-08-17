@@ -1,0 +1,48 @@
+{
+  "name": "meditaitons",
+  "version": "0.0.0",
+  "scripts": {
+    "ng": "ng",
+    "start": "tsx scripts/dev.ts",
+    "start:web": "ng serve",
+    "start:api": "tsx --watch scripts/chat-api.ts",
+    "build": "ng build",
+    "watch": "ng build --watch --configuration development",
+    "test": "ng test",
+    "ingest:meditations": "tsx scripts/ingest-meditations.ts",
+    "chunk:meditations": "tsx scripts/ingest-meditations.ts",
+    "pinecone:upsert": "tsx scripts/pinecone.ts upsert",
+    "pinecone:verify": "tsx scripts/pinecone.ts verify",
+    "pinecone:query": "tsx scripts/query-meditations.ts",
+    "pinecone:query:test": "tsx scripts/query-meditations.ts --suite",
+    "routing:test": "tsx scripts/test-routing.ts",
+    "chat:api": "tsx scripts/chat-api.ts"
+  },
+  "private": true,
+  "engines": {
+    "node": ">=20.19"
+  },
+  "packageManager": "npm@10.8.2",
+  "dependencies": {
+    "@angular/common": "^21.2.0",
+    "@angular/compiler": "^21.2.0",
+    "@angular/core": "^21.2.0",
+    "@angular/forms": "^21.2.0",
+    "@angular/platform-browser": "^21.2.0",
+    "@angular/router": "^21.2.0",
+    "rxjs": "~7.8.0",
+    "tslib": "^2.3.0"
+  },
+  "devDependencies": {
+    "@angular/build": "^21.2.9",
+    "@angular/cli": "^21.2.9",
+    "@angular/compiler-cli": "^21.2.0",
+    "@types/jsdom": "^30.0.0",
+    "@types/node": "^26.2.0",
+    "jsdom": "^28.0.0",
+    "prettier": "^3.8.1",
+    "tsx": "^4.23.12",
+    "typescript": "~5.9.2",
+    "vitest": "^4.0.8"
+  }
+}

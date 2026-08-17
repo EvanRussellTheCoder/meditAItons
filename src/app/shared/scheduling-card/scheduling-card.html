@@ -1,0 +1,102 @@
+<form
+  #scheduleForm
+  class="schedule-card"
+  aria-labelledby="schedule-card-title"
+  (submit)="$event.preventDefault(); submit(scheduleForm)"
+>
+  <header>
+    <span class="calendar-mark"><app-icon name="calendar" /></span>
+    <div>
+      <span class="eyebrow">Calendar proposal</span>
+      <h2 id="schedule-card-title">Set aside time to meditate</h2>
+    </div>
+  </header>
+
+  <p class="consent-note">Nothing will be booked until you confirm these details.</p>
+
+  <div class="time-grid">
+    <label>
+      <span>Date</span>
+      <input
+        type="date"
+        required
+        [value]="date()"
+        [disabled]="submitting()"
+        (input)="update('date', $event)"
+      />
+    </label>
+    <label>
+      <span>Time</span>
+      <input
+        type="time"
+        required
+        [value]="time()"
+        [disabled]="submitting()"
+        (input)="update('time', $event)"
+      />
+    </label>
+  </div>
+
+  <label>
+    <span>Timezone</span>
+    <input
+      type="text"
+      required
+      maxlength="100"
+      autocomplete="off"
+      [value]="timezone()"
+      [disabled]="submitting()"
+      (input)="update('timezone', $event)"
+    />
+  </label>
+
+  <div class="attendee-grid">
+    <label>
+      <span>Your name</span>
+      <input
+        type="text"
+        required
+        maxlength="120"
+        autocomplete="name"
+        placeholder="Name for the invitation"
+        [value]="attendeeName()"
+        [disabled]="submitting()"
+        (input)="update('attendeeName', $event)"
+      />
+    </label>
+    <label>
+      <span>Your email</span>
+      <input
+        type="email"
+        required
+        maxlength="254"
+        autocomplete="email"
+        placeholder="Email for the invitation"
+        [value]="attendeeEmail()"
+        [disabled]="submitting()"
+        (input)="update('attendeeEmail', $event)"
+      />
+    </label>
+  </div>
+
+  <p class="duration">{{ proposal().durationMinutes }}-minute meditation session</p>
+
+  @if (error()) {
+    <p class="schedule-error" role="alert">{{ error() }}</p>
+  }
+
+  <footer>
+    <button type="button" class="secondary" [disabled]="submitting()" (click)="cancelled.emit()">
+      Cancel
+    </button>
+    <button type="submit" class="primary" [disabled]="submitting() || !retryable()">
+      @if (submitting()) {
+        Scheduling…
+      } @else if (!retryable()) {
+        Check Cal.com
+      } @else {
+        Confirm meditation time
+      }
+    </button>
+  </footer>
+</form>

@@ -1,0 +1,44 @@
+<section class="journal-page page-enter" aria-labelledby="daily-quote">
+  <header class="daily-passage">
+    <p id="daily-quote">“Waste no more time arguing about what a good man should be. Be one.”</p>
+    <cite>— Meditations, 10.16</cite>
+  </header>
+
+  <div class="date-divider" aria-label="Conversation date">
+    <span></span>
+    <time [attr.datetime]="today.toISOString()">{{ today | date: 'MMMM d, y' }}</time>
+    <span></span>
+  </div>
+
+  <div #conversation class="conversation" aria-live="polite" aria-relevant="additions text">
+    @for (message of chat.messages(); track message.id) {
+      <app-chat-message [message]="message" />
+    }
+
+    @if (chat.pendingSchedule(); as proposal) {
+      <app-scheduling-card
+        [proposal]="proposal"
+        [submitting]="chat.isScheduling()"
+        [error]="chat.schedulingError()"
+        [retryable]="chat.schedulingRetryable()"
+        (confirmed)="chat.confirmSchedule($event)"
+        (cancelled)="chat.cancelSchedule()"
+      />
+    }
+
+    @if (chat.isResponding()) {
+      <div class="typing-row" aria-label="Marcus Aurelius is composing a response">
+        <img src="assets/marcus-aurelius.png" alt="" width="48" height="48" />
+        <div class="typing-bubble"><i></i><i></i><i></i></div>
+      </div>
+    }
+  </div>
+
+  <div class="composer-wrap">
+    <app-chat-composer
+      [disabled]="chat.isResponding() || chat.isScheduling()"
+      (submitted)="chat.send($event)"
+    />
+    <p class="disclaimer">A reflective companion, not a substitute for professional care.</p>
+  </div>
+</section>

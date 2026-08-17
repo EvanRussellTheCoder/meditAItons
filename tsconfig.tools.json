@@ -1,0 +1,19 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "noEmit": true,
+    "types": ["node"],
+    "lib": ["ES2022", "DOM"]
+  },
+  "include": [
+    "scripts/**/*.ts",
+    "src/app/core/chunking/**/*.ts",
+    "src/app/core/chat/**/*.ts",
+    "src/app/core/ingestion/**/*.ts",
+    "src/app/core/pinecone/**/*.ts",
+    "src/app/core/routing/**/*.ts"
+  ],
+  "exclude": ["src/**/*.spec.ts"]
+}

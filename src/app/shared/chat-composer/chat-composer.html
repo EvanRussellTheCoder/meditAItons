@@ -1,0 +1,23 @@
+<form class="composer-shell" (submit)="$event.preventDefault(); submit()">
+  <label class="sr-only" for="message-composer">Write to Marcus Aurelius</label>
+  <textarea
+    #composer
+    id="message-composer"
+    name="message"
+    rows="1"
+    maxlength="600"
+    enterkeyhint="send"
+    placeholder="Write to Marcus Aurelius…"
+    [disabled]="disabled()"
+    [value]="draft()"
+    (input)="onInput($event)"
+    (keydown)="onKeydown($event)"
+  ></textarea>
+
+  <div class="composer-footer">
+    <span class="hint">Enter to send · Shift + Enter for a new line</span>
+    <button type="submit" [disabled]="disabled() || !draft().trim()" aria-label="Send message">
+      <app-icon name="send" />
+    </button>
+  </div>
+</form>

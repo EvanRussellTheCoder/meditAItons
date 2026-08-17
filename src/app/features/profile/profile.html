@@ -1,0 +1,71 @@
+<section class="profile-page page-enter" aria-labelledby="profile-title">
+  <header class="profile-heading">
+    <div class="avatar-frame">
+      <img
+        src="assets/marcus-aurelius.png"
+        width="96"
+        height="96"
+        alt="Classical portrait of Marcus Aurelius"
+      />
+    </div>
+    <span class="eyebrow">Your practice</span>
+    <h1 id="profile-title">Fellow traveler</h1>
+    <p>“The happiness of your life depends upon the quality of your thoughts.”</p>
+  </header>
+
+  <div class="stats" aria-label="Practice statistics">
+    <div><strong>7</strong><span>Day streak</span></div>
+    <div>
+      <strong>{{ chat.messageCount() }}</strong
+      ><span>Messages</span>
+    </div>
+    <div><strong>3</strong><span>Reflections</span></div>
+  </div>
+
+  <section class="practice-card" aria-labelledby="intention-title">
+    <div class="section-title">
+      <app-icon name="sparkle" />
+      <div>
+        <span>This week's intention</span>
+        <h2 id="intention-title">Act on what is mine to do</h2>
+      </div>
+    </div>
+    <div class="progress"><span></span></div>
+    <p>Four of seven days practiced</p>
+  </section>
+
+  <section class="preferences-card" aria-labelledby="preferences-title">
+    <h2 id="preferences-title">Reading preferences</h2>
+
+    <label class="preference-row">
+      <span
+        ><strong>Show timestamps</strong><small>Display the time beneath each message</small></span
+      >
+      <input
+        type="checkbox"
+        [checked]="preferences.showTimestamps()"
+        (change)="preferences.showTimestamps.set(!preferences.showTimestamps())"
+      />
+    </label>
+    <label class="preference-row">
+      <span
+        ><strong>Compact messages</strong><small>Reduce spacing in the conversation</small></span
+      >
+      <input
+        type="checkbox"
+        [checked]="preferences.compactMessages()"
+        (change)="preferences.compactMessages.set(!preferences.compactMessages())"
+      />
+    </label>
+    <label class="preference-row">
+      <span
+        ><strong>Reduce motion</strong><small>Limit transitions and animated effects</small></span
+      >
+      <input
+        type="checkbox"
+        [checked]="preferences.reducedMotion()"
+        (change)="preferences.reducedMotion.set(!preferences.reducedMotion())"
+      />
+    </label>
+  </section>
+</section>

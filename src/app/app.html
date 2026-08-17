@@ -1,0 +1,163 @@
+<div class="app-stage">
+  <div class="book-shell">
+    <div class="book-ridge" aria-hidden="true"></div>
+
+    <header class="topbar">
+      <button
+        type="button"
+        class="icon-button"
+        aria-label="Open menu"
+        [attr.aria-expanded]="menuOpen()"
+        (click)="openMenu()"
+      >
+        <app-icon name="menu" />
+      </button>
+      <a class="wordmark" routerLink="/" aria-label="Meditations journal home">Marcus Aurelius</a>
+      <button
+        type="button"
+        class="icon-button"
+        aria-label="Open settings"
+        [attr.aria-expanded]="settingsOpen()"
+        (click)="openSettings()"
+      >
+        <app-icon name="settings" />
+      </button>
+    </header>
+
+    <main class="page-viewport" id="main-content">
+      <router-outlet />
+    </main>
+
+    <nav class="bottom-nav" aria-label="Primary navigation">
+      @for (item of navigation; track item.path) {
+        <a
+          [routerLink]="item.path"
+          routerLinkActive="active"
+          [routerLinkActiveOptions]="{ exact: item.exact }"
+          [attr.aria-label]="item.label"
+          (click)="closePanels()"
+        >
+          <app-icon [name]="item.icon" />
+          <span>{{ item.label }}</span>
+        </a>
+      }
+    </nav>
+
+    @if (menuOpen() || settingsOpen()) {
+      <button
+        type="button"
+        class="backdrop"
+        aria-label="Close panel"
+        (click)="closePanels()"
+      ></button>
+    }
+
+    @if (menuOpen()) {
+      <aside
+        class="side-panel menu-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="menu-title"
+      >
+        <div class="panel-heading">
+          <span id="menu-title">Meditations</span>
+          <button type="button" class="icon-button" aria-label="Close menu" (click)="closePanels()">
+            <app-icon name="close" />
+          </button>
+        </div>
+
+        <div class="marcus-card">
+          <img src="assets/marcus-aurelius.png" width="72" height="72" alt="" />
+          <div>
+            <span>Your Stoic guide</span><strong>Marcus Aurelius</strong><small>121–180 AD</small>
+          </div>
+        </div>
+
+        <nav class="panel-nav" aria-label="Menu navigation">
+          @for (item of navigation; track item.path) {
+            <a
+              [routerLink]="item.path"
+              routerLinkActive="active"
+              [routerLinkActiveOptions]="{ exact: item.exact }"
+              (click)="closePanels()"
+            >
+              <app-icon [name]="item.icon" /><span>{{ item.label }}</span
+              ><app-icon name="chevron" />
+            </a>
+          }
+        </nav>
+
+        <button type="button" class="new-conversation" (click)="startNewConversation()">
+          <app-icon name="sparkle" /> Begin a new conversation
+        </button>
+        <p class="version">Meditations · Private by design</p>
+      </aside>
+    }
+
+    @if (settingsOpen()) {
+      <aside
+        class="side-panel settings-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="settings-title"
+      >
+        <div class="panel-heading">
+          <span id="settings-title">Settings</span>
+          <button
+            type="button"
+            class="icon-button"
+            aria-label="Close settings"
+            (click)="closePanels()"
+          >
+            <app-icon name="close" />
+          </button>
+        </div>
+
+        <p class="panel-intro">Shape the journal into a quieter place to think.</p>
+
+        <div class="settings-list">
+          <label>
+            <span
+              ><strong>Show timestamps</strong><small>Time and reading status in chat</small></span
+            >
+            <input
+              type="checkbox"
+              [checked]="preferences.showTimestamps()"
+              (change)="preferences.showTimestamps.set(!preferences.showTimestamps())"
+            />
+          </label>
+          <label>
+            <span
+              ><strong>Compact messages</strong><small>A denser conversation layout</small></span
+            >
+            <input
+              type="checkbox"
+              [checked]="preferences.compactMessages()"
+              (change)="preferences.compactMessages.set(!preferences.compactMessages())"
+            />
+          </label>
+          <label>
+            <span><strong>Reduce motion</strong><small>Limit transitions and movement</small></span>
+            <input
+              type="checkbox"
+              [checked]="preferences.reducedMotion()"
+              (change)="preferences.reducedMotion.set(!preferences.reducedMotion())"
+            />
+          </label>
+        </div>
+
+        <div class="settings-actions">
+          <button type="button" (click)="preferences.reset()">Restore defaults</button>
+          <button
+            type="button"
+            class="danger"
+            [disabled]="chat.isScheduling()"
+            (click)="startNewConversation()"
+          >
+            Clear conversation
+          </button>
+        </div>
+      </aside>
+    }
+  </div>
+</div>

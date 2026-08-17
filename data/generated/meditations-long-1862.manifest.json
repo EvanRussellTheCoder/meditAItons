@@ -1,0 +1,141 @@
+{
+  "schema_version": "meditations-ingestion-v1",
+  "work": "Meditations",
+  "edition": {
+    "translator": "George Long",
+    "year": 1862,
+    "edition_id": "long-1862"
+  },
+  "source_manifest": "data/sources/meditations-wiki-urls-georgelang.txt",
+  "source_api": "MediaWiki Action API action=parse",
+  "source_license": "See the license and attribution terms on each Wikisource source page.",
+  "chunking_version": "parent-child-v1",
+  "tokenizer": "unicode-word-v1",
+  "chunking_config": {
+    "shortParentMaxTokens": 180,
+    "mediumParentMaxTokens": 400,
+    "mediumTargetMinTokens": 120,
+    "mediumTargetMaxTokens": 180,
+    "longTargetMinTokens": 150,
+    "longTargetMaxTokens": 220,
+    "hardMaxTokens": 260,
+    "minimumDesirableChildTokens": 60,
+    "overlapStrategy": "previous_sentence",
+    "maxOverlapTokens": 80,
+    "maxOverlapRatio": 0.4,
+    "sentenceLocale": "en"
+  },
+  "totals": {
+    "books": 12,
+    "parents": 487,
+    "children": 557
+  },
+  "books": [
+    {
+      "book": 1,
+      "url": "https://en.wikisource.org/wiki/The_Thoughts_of_the_Emperor_Marcus_Aurelius_Antoninus/Book_I",
+      "page_title": "The Thoughts of the Emperor Marcus Aurelius Antoninus/Book I",
+      "page_id": 1235756,
+      "revision_id": 11501510,
+      "section_count": 17
+    },
+    {
+      "book": 2,
+      "url": "https://en.wikisource.org/wiki/The_Thoughts_of_the_Emperor_Marcus_Aurelius_Antoninus/Book_II",
+      "page_title": "The Thoughts of the Emperor Marcus Aurelius Antoninus/Book II",
+      "page_id": 1235757,
+      "revision_id": 10781505,
+      "section_count": 17
+    },
+    {
+      "book": 3,
+      "url": "https://en.wikisource.org/wiki/The_Thoughts_of_the_Emperor_Marcus_Aurelius_Antoninus/Book_III",
+      "page_title": "The Thoughts of the Emperor Marcus Aurelius Antoninus/Book III",
+      "page_id": 1235759,
+      "revision_id": 13750052,
+      "section_count": 16
+    },
+    {
+      "book": 4,
+      "url": "https://en.wikisource.org/wiki/The_Thoughts_of_the_Emperor_Marcus_Aurelius_Antoninus/Book_IV",
+      "page_title": "The Thoughts of the Emperor Marcus Aurelius Antoninus/Book IV",
+      "page_id": 1235760,
+      "revision_id": 10781559,
+      "section_count": 51
+    },
+    {
+      "book": 5,
+      "url": "https://en.wikisource.org/wiki/The_Thoughts_of_the_Emperor_Marcus_Aurelius_Antoninus/Book_V",
+      "page_title": "The Thoughts of the Emperor Marcus Aurelius Antoninus/Book V",
+      "page_id": 1235763,
+      "revision_id": 14147113,
+      "section_count": 36
+    },
+    {
+      "book": 6,
+      "url": "https://en.wikisource.org/wiki/The_Thoughts_of_the_Emperor_Marcus_Aurelius_Antoninus/Book_VI",
+      "page_title": "The Thoughts of the Emperor Marcus Aurelius Antoninus/Book VI",
+      "page_id": 1235765,
+      "revision_id": 10781569,
+      "section_count": 59
+    },
+    {
+      "book": 7,
+      "url": "https://en.wikisource.org/wiki/The_Thoughts_of_the_Emperor_Marcus_Aurelius_Antoninus/Book_VII",
+      "page_title": "The Thoughts of the Emperor Marcus Aurelius Antoninus/Book VII",
+      "page_id": 1235771,
+      "revision_id": 13402914,
+      "section_count": 75
+    },
+    {
+      "book": 8,
+      "url": "https://en.wikisource.org/wiki/The_Thoughts_of_the_Emperor_Marcus_Aurelius_Antoninus/Book_VIII",
+      "page_title": "The Thoughts of the Emperor Marcus Aurelius Antoninus/Book VIII",
+      "page_id": 1235774,
+      "revision_id": 10781838,
+      "section_count": 61
+    },
+    {
+      "book": 9,
+      "url": "https://en.wikisource.org/wiki/The_Thoughts_of_the_Emperor_Marcus_Aurelius_Antoninus/Book_IX",
+      "page_title": "The Thoughts of the Emperor Marcus Aurelius Antoninus/Book IX",
+      "page_id": 1235776,
+      "revision_id": 10781584,
+      "section_count": 42
+    },
+    {
+      "book": 10,
+      "url": "https://en.wikisource.org/wiki/The_Thoughts_of_the_Emperor_Marcus_Aurelius_Antoninus/Book_X",
+      "page_title": "The Thoughts of the Emperor Marcus Aurelius Antoninus/Book X",
+      "page_id": 1235780,
+      "revision_id": 10781586,
+      "section_count": 38
+    },
+    {
+      "book": 11,
+      "url": "https://en.wikisource.org/wiki/The_Thoughts_of_the_Emperor_Marcus_Aurelius_Antoninus/Book_XI",
+      "page_title": "The Thoughts of the Emperor Marcus Aurelius Antoninus/Book XI",
+      "page_id": 1235790,
+      "revision_id": 10781587,
+      "section_count": 39
+    },
+    {
+      "book": 12,
+      "url": "https://en.wikisource.org/wiki/The_Thoughts_of_the_Emperor_Marcus_Aurelius_Antoninus/Book_XII",
+      "page_title": "The Thoughts of the Emperor Marcus Aurelius Antoninus/Book XII",
+      "page_id": 1235794,
+      "revision_id": 10781589,
+      "section_count": 36
+    }
+  ],
+  "files": {
+    "parents": {
+      "path": "meditations-long-1862.parents.jsonl",
+      "sha256": "sha256:7a0fbcce591be1f60e686e8fcb15b9ee09abb549aa6af0d14b7c2d7992a16a37"
+    },
+    "children": {
+      "path": "meditations-long-1862.children.jsonl",
+      "sha256": "sha256:edf427170af3930b2c0bafcf5c85ca98e20bd7d0f9b91d0b314dc65c8a387038"
+    }
+  }
+}
