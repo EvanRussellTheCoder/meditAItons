@@ -1,0 +1,63 @@
+<button
+  #trigger
+  class="guide-trigger"
+  type="button"
+  aria-haspopup="dialog"
+  aria-controls="journal-guide-dialog"
+  [attr.aria-expanded]="isOpen()"
+  (click)="open()"
+>
+  <app-icon name="book" />
+  <span>How to use</span>
+</button>
+
+<dialog
+  #dialog
+  id="journal-guide-dialog"
+  class="guide-dialog"
+  aria-labelledby="journal-guide-title"
+  aria-describedby="journal-guide-intro"
+  (cancel)="onCancel($event)"
+  (keydown)="onKeydown($event)"
+  (close)="isOpen.set(false)"
+  (click)="onBackdropClick($event)"
+>
+  <header class="guide-heading">
+    <div>
+      <p class="eyebrow">A short introduction</p>
+      <h2 id="journal-guide-title">A guide to your journal</h2>
+      <p id="journal-guide-intro">Begin wherever you are.</p>
+    </div>
+    <button type="button" class="close-guide" aria-label="Close guide" autofocus (click)="close()">
+      <app-icon name="close" />
+    </button>
+  </header>
+
+  <div class="guide-examples">
+    @for (example of examples; track example.title) {
+      <section class="guide-example">
+        <app-icon [name]="example.icon" />
+        <div>
+          <h3>{{ example.title }}</h3>
+          <p>{{ example.description }}</p>
+          <button
+            type="button"
+            class="example-prompt"
+            [attr.aria-label]="'Use example: ' + example.prompt"
+            aria-describedby="guide-example-hint"
+            [disabled]="!canInsert(example.prompt)"
+            (click)="selectExample(example.prompt)"
+          >
+            <span>“{{ example.prompt }}”</span>
+            <app-icon name="chevron" />
+          </button>
+        </div>
+      </section>
+    }
+  </div>
+
+  <footer class="guide-footer">
+    <p id="guide-example-hint" aria-live="polite">{{ exampleHint() }}</p>
+    <button type="button" class="return-button" (click)="close()">Return to journal</button>
+  </footer>
+</dialog>

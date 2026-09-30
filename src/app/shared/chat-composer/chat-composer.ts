@@ -35,6 +35,29 @@ export class ChatComposerComponent {
     }
   }
 
+  insertExample(prompt: string): boolean {
+    if (this.disabled() || !prompt.trim()) {
+      return false;
+    }
+
+    const currentDraft = this.draft();
+    const nextDraft = currentDraft ? `${currentDraft}\n\n${prompt}` : prompt;
+    if (nextDraft.length > 600) {
+      return false;
+    }
+
+    this.draft.set(nextDraft);
+
+    const textarea = this.textarea()?.nativeElement;
+    if (textarea) {
+      textarea.value = nextDraft;
+      this.resize(textarea);
+      textarea.focus();
+    }
+
+    return true;
+  }
+
   submit(): void {
     const message = this.draft().trim();
     if (!message || this.disabled()) {

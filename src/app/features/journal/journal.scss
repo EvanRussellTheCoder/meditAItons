@@ -39,12 +39,20 @@
   text-transform: uppercase;
 }
 
+.journal-toolbar {
+  display: flex;
+  gap: 0.8rem;
+  align-items: center;
+  margin: 0.15rem 0 1rem;
+}
+
 .date-divider {
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   gap: 0.8rem;
   align-items: center;
-  margin: 0.15rem 0 1.45rem;
+  min-width: 0;
+  flex: 1;
   color: var(--parchment-muted);
   font-family: var(--font-display);
   font-size: 0.76rem;
@@ -153,7 +161,7 @@
     padding-bottom: 0.65rem;
   }
 
-  .date-divider {
+  .journal-toolbar {
     margin-bottom: 0.85rem;
   }
 

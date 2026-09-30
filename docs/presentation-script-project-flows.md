@@ -17,7 +17,7 @@ User -> selector -> IN_SCOPE -> retrieve -> grounded answer + exact quote
 
 **Say:**
 
-“MeditAItons has one offline data flow and two possible runtime action flows. Offline, it turns the
+“MeditAItions has one offline data flow and two possible runtime action flows. Offline, it turns the
 George Long translation of _Meditations_ into a traceable semantic-search corpus. At runtime, every
 message first reaches a selector. An in-scope philosophical question can use retrieval-augmented
 generation, or RAG. A request to schedule meditation takes a separate scheduler route. That route
@@ -313,7 +313,7 @@ artifacts, typed runtime branches, and privacy-bounded logs. The design does not
 model to ingest, retrieve, answer, and schedule. It gives each uncertain model task a narrow schema,
 then surrounds it with deterministic validation and explicit application-level authority.
 
-That is the core flow of MeditAItons: preserve the source, retrieve only when allowed, show the
+That is the core flow of MeditAItions: preserve the source, retrieve only when allowed, show the
 source’s exact words, and require human confirmation before acting outside the conversation.”
 
 **Code to open:**

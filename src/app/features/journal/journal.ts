@@ -12,10 +12,17 @@ import { PreferencesStore } from '../../core/services/preferences.store';
 import { ChatComposerComponent } from '../../shared/chat-composer/chat-composer';
 import { ChatMessageComponent } from '../../shared/chat-message/chat-message';
 import { SchedulingCardComponent } from '../../shared/scheduling-card/scheduling-card';
+import { JournalGuideComponent } from '../../shared/journal-guide/journal-guide';
 
 @Component({
   selector: 'app-journal',
-  imports: [DatePipe, ChatComposerComponent, ChatMessageComponent, SchedulingCardComponent],
+  imports: [
+    DatePipe,
+    ChatComposerComponent,
+    ChatMessageComponent,
+    SchedulingCardComponent,
+    JournalGuideComponent,
+  ],
   templateUrl: './journal.html',
   styleUrl: './journal.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,

@@ -26,7 +26,7 @@ const CHILD_FILENAME = 'meditations-long-1862.children.jsonl';
 const MANIFEST_FILENAME = 'meditations-long-1862.manifest.json';
 const MAX_FETCH_ATTEMPTS = 4;
 const INTER_REQUEST_DELAY_MS = 250;
-const USER_AGENT = 'MeditAItons/1.0 (educational Meditations ingestion pipeline)';
+const USER_AGENT = 'MeditAItions/1.0 (educational Meditations ingestion pipeline)';
 
 interface CliOptions {
   readonly sourcesPath: string;

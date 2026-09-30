@@ -1,0 +1,229 @@
+:host {
+  display: block;
+}
+
+.guide-trigger {
+  display: inline-flex;
+  min-height: 2.75rem;
+  padding: 0.45rem 0.7rem;
+  gap: 0.45rem;
+  align-items: center;
+  color: var(--bronze-bright);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 0.35rem;
+  font-size: 0.74rem;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.guide-trigger app-icon {
+  width: 1rem;
+  height: 1rem;
+}
+
+.guide-trigger:hover,
+.close-guide:hover,
+.example-prompt:hover:not(:disabled) {
+  background: var(--surface-hover);
+  border-color: var(--bronze);
+}
+
+.guide-dialog {
+  position: fixed;
+  width: min(33rem, calc(100vw - 2rem));
+  max-width: none;
+  max-height: calc(100dvh - 2rem);
+  padding: 0;
+  margin: auto;
+  overflow: hidden;
+  color: var(--parchment);
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  border-radius: 0.65rem;
+  box-shadow: var(--shadow);
+}
+
+.guide-dialog[open] {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.guide-dialog::backdrop {
+  background: rgb(6 8 5 / 78%);
+  backdrop-filter: blur(3px);
+}
+
+.guide-heading {
+  display: flex;
+  padding: 1.4rem 1.4rem 0.9rem;
+  gap: 0.7rem;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.eyebrow {
+  margin: 0 0 0.5rem;
+  color: var(--bronze-bright);
+  font-size: 0.62rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+}
+
+h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(1.45rem, 5.6vw, 1.8rem);
+  font-weight: 500;
+  line-height: 1.2;
+  text-wrap: balance;
+}
+
+#journal-guide-intro {
+  margin: 0.5rem 0 0;
+  color: var(--parchment-muted);
+  font-size: 0.8rem;
+}
+
+.close-guide {
+  display: grid;
+  width: 2.75rem;
+  height: 2.75rem;
+  padding: 0;
+  flex: 0 0 auto;
+  place-items: center;
+  color: var(--parchment-muted);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.close-guide app-icon {
+  width: 1.1rem;
+  height: 1.1rem;
+}
+
+.guide-examples {
+  min-height: 0;
+  padding: 0 1.4rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: var(--bronze-dim) transparent;
+  scrollbar-width: thin;
+}
+
+.guide-example {
+  display: grid;
+  padding: 1rem 0;
+  grid-template-columns: 1.25rem minmax(0, 1fr);
+  gap: 0.8rem;
+  border-top: 1px solid var(--line);
+}
+
+.guide-example > app-icon {
+  width: 1.2rem;
+  height: 1.2rem;
+  margin-top: 0.1rem;
+  color: var(--bronze-bright);
+}
+
+h3 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.07rem;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.guide-example p {
+  margin: 0.35rem 0 0.65rem;
+  color: var(--parchment-muted);
+  font-size: 0.76rem;
+  line-height: 1.5;
+}
+
+.example-prompt {
+  display: flex;
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0.65rem 0.7rem;
+  gap: 0.65rem;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--parchment);
+  background: var(--ink-soft);
+  border: 1px solid var(--line);
+  border-radius: 0.35rem;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  text-align: left;
+  cursor: pointer;
+}
+
+.example-prompt app-icon {
+  width: 0.95rem;
+  height: 0.95rem;
+  flex: 0 0 auto;
+  color: var(--bronze-bright);
+}
+
+.example-prompt:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.guide-footer {
+  display: flex;
+  padding: 1rem 1.4rem 1.4rem;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid var(--line-soft);
+}
+
+.guide-footer p {
+  margin: 0;
+  color: var(--parchment-muted);
+  font-size: 0.69rem;
+  line-height: 1.5;
+}
+
+.return-button {
+  min-height: 2.75rem;
+  padding: 0.6rem 0.9rem;
+  flex: 0 0 auto;
+  color: var(--ink);
+  background: var(--bronze-bright);
+  border: 1px solid var(--bronze-bright);
+  border-radius: 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.return-button:hover {
+  background: var(--bronze);
+}
+
+@media (max-width: 420px) {
+  .guide-heading {
+    padding: 1rem 1rem 0.8rem;
+  }
+
+  .guide-examples {
+    padding-inline: 1rem;
+  }
+
+  .guide-example {
+    gap: 0.55rem;
+    padding-block: 0.85rem;
+  }
+
+  .guide-footer {
+    padding: 0.8rem 1rem 1rem;
+    gap: 0.7rem;
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
