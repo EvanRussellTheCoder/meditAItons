@@ -43,7 +43,7 @@
   gap: 0.55rem;
   padding: 0.65rem 0.35rem 0;
   color: var(--parchment-muted);
-  font-size: 0.72rem;
+  font-size: var(--text-xs);
 }
 
 .citations-label {
@@ -93,7 +93,7 @@
   min-height: 1.5rem;
   padding: 0.35rem 0.35rem 0;
   color: var(--parchment-muted);
-  font-size: 0.74rem;
+  font-size: var(--text-xs);
 }
 
 .read-status {

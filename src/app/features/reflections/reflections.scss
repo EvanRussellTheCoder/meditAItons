@@ -10,7 +10,7 @@
 
 .eyebrow {
   color: var(--bronze);
-  font-size: 0.68rem;
+  font-size: var(--text-xs);
   font-weight: 700;
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -91,7 +91,7 @@ h1 {
 
 .prompt-card small {
   color: var(--parchment-muted);
-  font-size: 0.72rem;
+  font-size: var(--text-sm);
   line-height: 1.35;
 }
 
@@ -150,11 +150,12 @@ textarea:focus {
 }
 
 .writing-actions span {
-  color: #6e695c;
-  font-size: 0.66rem;
+  color: var(--parchment-subtle);
+  font-size: var(--text-xs);
 }
 
 .writing-actions button {
+  min-height: var(--tap-target);
   padding: 0.58rem 0.9rem;
   color: #171710;
   background: var(--bronze);

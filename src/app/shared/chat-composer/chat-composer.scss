@@ -36,7 +36,7 @@ textarea {
 }
 
 textarea::placeholder {
-  color: #817a6b;
+  color: var(--parchment-subtle);
 }
 
 .composer-footer {
@@ -47,15 +47,15 @@ textarea::placeholder {
 }
 
 .hint {
-  color: #625e53;
-  font-size: 0.64rem;
+  color: var(--parchment-subtle);
+  font-size: var(--text-xs);
 }
 
 button {
   display: grid;
-  flex: 0 0 2.35rem;
-  width: 2.35rem;
-  height: 2.35rem;
+  flex: 0 0 var(--tap-target);
+  width: var(--tap-target);
+  height: var(--tap-target);
   padding: 0;
   place-items: center;
   color: var(--bronze-bright);

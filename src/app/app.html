@@ -1,12 +1,15 @@
 <div class="app-stage">
-  <div class="book-shell">
+  <div class="book-shell" [class.panel-open]="panelOpen()">
     <div class="book-ridge" aria-hidden="true"></div>
 
-    <header class="topbar">
+    <header class="topbar" [attr.inert]="panelOpen() ? '' : null">
       <button
+        #menuTrigger
         type="button"
         class="icon-button"
         aria-label="Open menu"
+        aria-haspopup="dialog"
+        aria-controls="menu-panel"
         [attr.aria-expanded]="menuOpen()"
         (click)="openMenu()"
       >
@@ -14,9 +17,12 @@
       </button>
       <a class="wordmark" routerLink="/" aria-label="Meditations journal home">Marcus Aurelius</a>
       <button
+        #settingsTrigger
         type="button"
         class="icon-button"
         aria-label="Open settings"
+        aria-haspopup="dialog"
+        aria-controls="settings-panel"
         [attr.aria-expanded]="settingsOpen()"
         (click)="openSettings()"
       >
@@ -24,11 +30,16 @@
       </button>
     </header>
 
-    <main class="page-viewport" id="main-content">
+    <main
+      #pageViewport
+      class="page-viewport"
+      id="main-content"
+      [attr.inert]="panelOpen() ? '' : null"
+    >
       <router-outlet />
     </main>
 
-    <nav class="bottom-nav" aria-label="Primary navigation">
+    <nav class="bottom-nav" aria-label="Primary navigation" [attr.inert]="panelOpen() ? '' : null">
       @for (item of navigation; track item.path) {
         <a
           [routerLink]="item.path"
@@ -48,20 +59,31 @@
         type="button"
         class="backdrop"
         aria-label="Close panel"
+        tabindex="-1"
         (click)="closePanels()"
       ></button>
     }
 
     @if (menuOpen()) {
       <aside
+        #menuPanel
+        id="menu-panel"
         class="side-panel menu-panel"
         role="dialog"
         aria-modal="true"
         aria-labelledby="menu-title"
+        tabindex="-1"
+        (keydown)="onPanelKeydown($event)"
       >
         <div class="panel-heading">
           <span id="menu-title">Meditations</span>
-          <button type="button" class="icon-button" aria-label="Close menu" (click)="closePanels()">
+          <button
+            type="button"
+            class="icon-button"
+            aria-label="Close menu"
+            data-panel-close
+            (click)="closePanels()"
+          >
             <app-icon name="close" />
           </button>
         </div>
@@ -96,10 +118,14 @@
 
     @if (settingsOpen()) {
       <aside
+        #settingsPanel
+        id="settings-panel"
         class="side-panel settings-panel"
         role="dialog"
         aria-modal="true"
         aria-labelledby="settings-title"
+        tabindex="-1"
+        (keydown)="onPanelKeydown($event)"
       >
         <div class="panel-heading">
           <span id="settings-title">Settings</span>
@@ -107,6 +133,7 @@
             type="button"
             class="icon-button"
             aria-label="Close settings"
+            data-panel-close
             (click)="closePanels()"
           >
             <app-icon name="close" />

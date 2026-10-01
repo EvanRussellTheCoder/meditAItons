@@ -12,7 +12,7 @@
   background: transparent;
   border: 1px solid var(--line);
   border-radius: 0.35rem;
-  font-size: 0.74rem;
+  font-size: var(--text-xs);
   white-space: nowrap;
   cursor: pointer;
 }
@@ -65,7 +65,7 @@
 .eyebrow {
   margin: 0 0 0.5rem;
   color: var(--bronze-bright);
-  font-size: 0.62rem;
+  font-size: var(--text-xs);
   letter-spacing: 0.15em;
   text-transform: uppercase;
 }
@@ -139,7 +139,7 @@ h3 {
 .guide-example p {
   margin: 0.35rem 0 0.65rem;
   color: var(--parchment-muted);
-  font-size: 0.76rem;
+  font-size: var(--text-sm);
   line-height: 1.5;
 }
 
@@ -185,7 +185,7 @@ h3 {
 .guide-footer p {
   margin: 0;
   color: var(--parchment-muted);
-  font-size: 0.69rem;
+  font-size: var(--text-xs);
   line-height: 1.5;
 }
 
