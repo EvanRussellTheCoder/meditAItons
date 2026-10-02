@@ -27,6 +27,9 @@ describe('SchedulingCardComponent', () => {
     component.submit({ reportValidity: () => true } as HTMLFormElement);
 
     expect(fixture.nativeElement.textContent).toContain('Nothing will be booked until you confirm');
+    expect(fixture.nativeElement.textContent).toContain(
+      'Scheduled meditation times need at least 12 hours\u2019 notice',
+    );
     expect(confirmed).toHaveBeenCalledWith({
       date: '2026-08-18',
       time: '19:00',

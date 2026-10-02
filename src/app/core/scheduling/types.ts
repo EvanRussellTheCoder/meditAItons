@@ -5,6 +5,10 @@ import type {
   MeditationScheduleProposal,
 } from '../models/chat.models';
 
+export const MINIMUM_SCHEDULING_NOTICE_HOURS = 12;
+export const MINIMUM_SCHEDULING_NOTICE_MESSAGE =
+  'Meditation sessions need at least 12 hours\u2019 notice. Choose a later time so you can protect the space and arrive without rushing.';
+
 export interface SchedulingExtractionRequest {
   readonly message: string;
   readonly history: readonly ChatHistoryMessage[];

@@ -13,6 +13,7 @@ export type PipelineStage =
 
 export type SchedulingAction =
   | 'ask_clarifying_question'
+  | 'request_later_time'
   | 'show_confirmation_card'
   | 'submit_confirmed_booking'
   | 'booking_created'
@@ -33,6 +34,7 @@ interface SchedulingProposalLogInput {
   readonly timezone: string;
   readonly durationMinutes: number;
   readonly proposalId?: string;
+  readonly blockReason?: 'minimum_notice';
 }
 
 interface SchedulingConfirmationLogInput {
@@ -158,20 +160,28 @@ export function logSchedulingProposalDecision({
   timezone,
   durationMinutes,
   proposalId,
+  blockReason,
 }: SchedulingProposalLogInput): void {
   if (!requestId) {
     return;
   }
   const asksForClarification = extraction.status === 'needs_clarification';
+  const blockedByMinimumNotice = blockReason === 'minimum_notice';
   console.info(
     `[scheduling] ${JSON.stringify(
       {
         requestId,
         phase: 'proposal',
-        action: asksForClarification ? 'ask_clarifying_question' : 'show_confirmation_card',
-        reason: asksForClarification
-          ? `The scheduling constraints are ambiguous (${extraction.ambiguity}).`
-          : 'The scheduling intent is ready for human review; no booking has been created.',
+        action: blockedByMinimumNotice
+          ? 'request_later_time'
+          : asksForClarification
+            ? 'ask_clarifying_question'
+            : 'show_confirmation_card',
+        reason: blockedByMinimumNotice
+          ? 'The selected time is inside the 12-hour minimum notice window; no proposal was created.'
+          : asksForClarification
+            ? `The scheduling constraints are ambiguous (${extraction.ambiguity}).`
+            : 'The scheduling intent is ready for human review; no booking has been created.',
         extractionStatus: extraction.status,
         ambiguity: extraction.ambiguity,
         extractedDate: extraction.suggestedDate,

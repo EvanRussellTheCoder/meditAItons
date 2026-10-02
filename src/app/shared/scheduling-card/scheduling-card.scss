@@ -59,6 +59,16 @@ h2 {
   font-size: 0.75rem;
 }
 
+.minimum-notice {
+  padding: 0.65rem 0.75rem;
+  margin: 0 0 0.9rem;
+  color: #d8c49b;
+  background: rgb(184 150 93 / 10%);
+  border-left: 2px solid rgb(210 177 113 / 68%);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+}
+
 .time-grid,
 .attendee-grid {
   display: grid;

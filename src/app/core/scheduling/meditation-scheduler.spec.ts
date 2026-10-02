@@ -62,6 +62,81 @@ describe('MeditationScheduler', () => {
     expect(calendar.book).not.toHaveBeenCalled();
   });
 
+  it('asks the user to choose a later time when the extracted time is inside 12 hours', async () => {
+    const calendar = successfulCalendar();
+    const scheduler = new MeditationScheduler({
+      extraction: {
+        extract: vi.fn(async () => ({
+          status: 'ready' as const,
+          suggestedDate: '2026-08-18',
+          suggestedTime: '08:30',
+          ambiguity: 'none' as const,
+          clarificationMessage: null,
+        })),
+      },
+      calendar,
+      now: () => new Date('2026-08-18T00:00:00.000Z'),
+    });
+
+    await expect(
+      scheduler.propose({ message: 'Schedule 8:30.', history: [], timezone: 'UTC' }),
+    ).resolves.toEqual({
+      message:
+        'Meditation sessions need at least 12 hours\u2019 notice. Choose a later time so you can protect the space and arrive without rushing.',
+      proposal: null,
+    });
+    expect(calendar.book).not.toHaveBeenCalled();
+  });
+
+  it('allows a proposal exactly 12 hours from now', async () => {
+    const calendar = successfulCalendar();
+    const scheduler = new MeditationScheduler({
+      extraction: {
+        extract: vi.fn(async () => ({
+          status: 'ready' as const,
+          suggestedDate: '2026-08-18',
+          suggestedTime: '12:00',
+          ambiguity: 'none' as const,
+          clarificationMessage: null,
+        })),
+      },
+      calendar,
+      now: () => new Date('2026-08-18T00:00:00.000Z'),
+      createProposalId: () => 'proposal-boundary',
+    });
+
+    await expect(
+      scheduler.propose({ message: 'Schedule noon.', history: [], timezone: 'UTC' }),
+    ).resolves.toMatchObject({
+      proposal: {
+        proposalId: 'proposal-boundary',
+        suggestedDate: '2026-08-18',
+        suggestedTime: '12:00',
+      },
+    });
+  });
+
+  it('rejects a confirmation edited inside the 12-hour window without contacting Cal.com', async () => {
+    const calendar = successfulCalendar();
+    const scheduler = schedulerWith(calendar);
+    await scheduler.propose({ message: 'Schedule it.', history: [], timezone: 'UTC' });
+
+    await expect(
+      scheduler.confirm({
+        proposalId: 'proposal-1',
+        date: '2026-08-13',
+        time: '23:00',
+        timezone: 'UTC',
+        attendeeName: 'Test User',
+        attendeeEmail: 'test@example.com',
+      }),
+    ).rejects.toMatchObject({
+      code: 'minimum_scheduling_notice',
+      retryable: true,
+    });
+    expect(calendar.book).not.toHaveBeenCalled();
+  });
+
   it('blocks duplicate confirmation of the same one-time proposal', async () => {
     const calendar = successfulCalendar();
     const scheduler = schedulerWith(calendar);

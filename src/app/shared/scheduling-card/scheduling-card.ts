@@ -3,6 +3,7 @@ import type {
   MeditationScheduleConfirmation,
   MeditationScheduleProposal,
 } from '../../core/models/chat.models';
+import { MINIMUM_SCHEDULING_NOTICE_HOURS } from '../../core/scheduling/types';
 import { IconComponent } from '../icon/icon';
 
 @Component({
@@ -13,6 +14,7 @@ import { IconComponent } from '../icon/icon';
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class SchedulingCardComponent {
+  readonly minimumNoticeHours = MINIMUM_SCHEDULING_NOTICE_HOURS;
   readonly proposal = input.required<MeditationScheduleProposal>();
   readonly submitting = input(false);
   readonly error = input<string | null>(null);
