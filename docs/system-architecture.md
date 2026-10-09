@@ -415,6 +415,11 @@ only in the Node process; they must never be added to Angular environment files 
 | `OPENAI_CHAT_MODEL`       | No                                             | Defaults to `gpt-5.6-sol`                             |
 | `CAL_API_KEY`             | Yes for localhost chat                         | Server-side Cal.com bearer credential                 |
 | `CAL_EVENT_TYPE_ID`       | Yes for localhost chat                         | Numeric meditation event type                         |
+| `LANGSMITH_TRACING`       | No                                             | Enables server-side runtime tracing when `true`        |
+| `LANGSMITH_API_KEY`       | When LangSmith tracing is enabled              | Server-side LangSmith credential                       |
+| `LANGSMITH_PROJECT`       | No                                             | Trace project; defaults to `meditaitons-local`         |
+| `LANGSMITH_ENDPOINT`      | No                                             | Optional HTTPS endpoint for a non-default region       |
+| `MEDITATIONS_LANGSMITH_CAPTURE_CONTENT` | No                              | Synthetic-only prompt/evidence/answer capture          |
 | `OPENAI_BASE_URL`         | No                                             | Defaults to `https://api.openai.com/v1`               |
 | `MEDITATIONS_API_HOST`    | No                                             | Loopback only; defaults to `127.0.0.1`                |
 | `MEDITATIONS_API_PORT`    | No                                             | Defaults to `3000`                                    |
@@ -574,6 +579,13 @@ events are compact one-line JSON; decision summaries are pretty-printed for deve
 logs explicitly distinguish proposal from confirmed external write and omit credentials and attendee
 identity.
 
+Optional LangSmith tracing mirrors the same runtime boundaries after startup preflights complete.
+Live synthetic validation covers all six router outcomes: only `IN_SCOPE` has embedding, Pinecone,
+and grounded-answer children; only `SCHEDULE` has a scheduling child; the other four routes stop
+after `selector`. A confirmed scheduling POST uses a separate root and is the only path that can
+contain a `cal.com` child. Content capture remains a separate synthetic-only opt-in, and disabling
+tracing leaves API behavior unchanged while uploading no runs.
+
 ## Detailed decision logs
 
 - [Parent/child chunking](chunking-decisions.md)
@@ -583,4 +595,4 @@ identity.
 - [Conversation routing and safety](conversation-routing-decisions.md)
 - [Localhost API and Angular chat](localhost-chat-decisions.md)
 - [Meditation scheduling and Cal.com](scheduling-decisions.md)
-- [Terminal observability](observability-decisions.md)
+- [Terminal and LangSmith observability](observability-decisions.md)

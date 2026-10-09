@@ -65,8 +65,33 @@ export class MeditationScheduler
       );
     }
     const currentDate = this.now();
-    const extraction = await observeStage('scheduling', request.requestId, () =>
-      this.dependencies.extraction.extract({ ...request, currentDate }),
+    const extraction = await observeStage(
+      'scheduling',
+      request.requestId,
+      () => this.dependencies.extraction.extract({ ...request, currentDate }),
+      {
+        inputs: {
+          safe: {
+            timezone: request.timezone,
+            historyMessages: request.history.length,
+            messageCharacters: request.message.length,
+            currentDate: currentDate.toISOString(),
+          },
+          content: {
+            message: request.message,
+            history: request.history,
+          },
+        },
+        outputs: (result) => ({
+          safe: {
+            status: result.status,
+            suggestedDate: result.suggestedDate,
+            suggestedTime: result.suggestedTime,
+            ambiguity: result.ambiguity,
+          },
+          content: { clarificationMessage: result.clarificationMessage },
+        }),
+      },
     );
     if (extraction.status === 'needs_clarification') {
       logSchedulingProposalDecision({
@@ -187,19 +212,43 @@ export class MeditationScheduler
     });
     let result;
     try {
-      result = await observeStage('cal.com', requestId, async () => {
-        const calendarResult = await this.dependencies.calendar.book({
-          proposalId: request.proposalId,
-          startUtc,
-          timezone: request.timezone,
-          attendeeName: request.attendeeName.trim(),
-          attendeeEmail: request.attendeeEmail.trim(),
-        });
-        if (!calendarResult.success) {
-          throw new CalendarBookingResultError(calendarResult);
-        }
-        return calendarResult;
-      });
+      result = await observeStage(
+        'cal.com',
+        requestId,
+        async () => {
+          const calendarResult = await this.dependencies.calendar.book({
+            proposalId: request.proposalId,
+            startUtc,
+            timezone: request.timezone,
+            attendeeName: request.attendeeName.trim(),
+            attendeeEmail: request.attendeeEmail.trim(),
+          });
+          if (!calendarResult.success) {
+            throw new CalendarBookingResultError(calendarResult);
+          }
+          return calendarResult;
+        },
+        {
+          runType: 'tool',
+          inputs: {
+            safe: {
+              proposalId: request.proposalId,
+              startUtc,
+              timezone: request.timezone,
+              attendeeNameProvided: Boolean(request.attendeeName.trim()),
+              attendeeEmailProvided: Boolean(request.attendeeEmail.trim()),
+            },
+          },
+          outputs: (calendarResult) => ({
+            safe: {
+              success: calendarResult.success,
+              bookingUidPresent: calendarResult.success && Boolean(calendarResult.bookingUid),
+              startUtc: calendarResult.success ? calendarResult.startUtc : null,
+              durationMinutes: calendarResult.success ? calendarResult.durationMinutes : null,
+            },
+          }),
+        },
+      );
     } catch (error) {
       if (!(error instanceof CalendarBookingResultError)) {
         stored.status = 'uncertain';

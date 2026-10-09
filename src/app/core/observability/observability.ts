@@ -19,6 +19,47 @@ export type SchedulingAction =
   | 'booking_created'
   | 'booking_rejected';
 
+export type PipelineTraceRunType = 'chain' | 'embedding' | 'retriever' | 'tool';
+
+export type PipelineTraceRecord = Readonly<Record<string, unknown>>;
+
+export interface PipelineTracePayload {
+  /** Fields that are always safe to send to the configured tracing provider. */
+  readonly safe: PipelineTraceRecord;
+  /** Synthetic-only content that requires the explicit content-capture setting. */
+  readonly content?: PipelineTraceRecord;
+}
+
+export interface PipelineTraceOperation<T> {
+  readonly name: string;
+  readonly requestId: string;
+  readonly runType?: PipelineTraceRunType;
+  readonly inputs?: PipelineTracePayload;
+  readonly outputs?: (value: T) => PipelineTracePayload;
+  readonly metadata?: PipelineTraceRecord;
+  readonly tags?: readonly string[];
+}
+
+/** Provider-neutral hook configured once by the server composition root. */
+export interface PipelineTracer {
+  trace<T>(operation: PipelineTraceOperation<T>, work: () => T | Promise<T>): Promise<T>;
+  flush?(): Promise<void>;
+  cleanup?(): void;
+}
+
+let pipelineTracer: PipelineTracer | undefined;
+
+export function configurePipelineTracer(tracer: PipelineTracer | undefined): void {
+  pipelineTracer = tracer;
+}
+
+export async function observeTrace<T>(
+  operation: PipelineTraceOperation<T>,
+  work: () => T | Promise<T>,
+): Promise<T> {
+  return pipelineTracer ? pipelineTracer.trace(operation, work) : work();
+}
+
 interface RoutingLogInput {
   readonly requestId?: string;
   readonly currentMessage: string;
@@ -68,6 +109,7 @@ export async function observeStage<T>(
   stage: PipelineStage,
   requestId: string | undefined,
   work: () => T | Promise<T>,
+  trace?: Omit<PipelineTraceOperation<T>, 'name' | 'requestId'>,
 ): Promise<T> {
   if (!requestId) {
     return work();
@@ -79,7 +121,14 @@ export async function observeStage<T>(
     stage,
   });
   try {
-    const result = await work();
+    const result = await observeTrace(
+      {
+        name: stage,
+        requestId,
+        ...trace,
+      },
+      work,
+    );
     writePipelineLog('info', {
       event: 'pipeline.stage.success',
       requestId,

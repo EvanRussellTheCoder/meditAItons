@@ -1,13 +1,19 @@
 import type { RoutingDecision } from '../routing';
+import type { PipelineTraceOperation, PipelineTracer } from './observability';
 import {
+  configurePipelineTracer,
   logRoutingDecision,
   logSchedulingConfirmation,
   logSchedulingProposalDecision,
+  observeTrace,
   observeStage,
   requestIdFromHeader,
 } from './observability';
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  configurePipelineTracer(undefined);
+  vi.restoreAllMocks();
+});
 
 describe('pipeline observability', () => {
   it('logs stage duration and a safe error identity without exposing an error message', async () => {
@@ -31,6 +37,45 @@ describe('pipeline observability', () => {
     expect(output).toContain('pipeline.stage.error');
     expect(output).toContain('calendar_permission_error');
     expect(output).not.toContain('secret-key-and-provider-body');
+  });
+
+  it('delegates request and stage spans through a configured provider without changing results', async () => {
+    const tracedOperations: Array<{ readonly name: string; readonly requestId: string }> = [];
+    const tracer: PipelineTracer = {
+      trace: async <T>(
+        operation: PipelineTraceOperation<T>,
+        work: () => T | Promise<T>,
+      ): Promise<T> => {
+        tracedOperations.push({ name: operation.name, requestId: operation.requestId });
+        return work();
+      },
+    };
+    configurePipelineTracer(tracer);
+
+    await expect(
+      observeTrace(
+        {
+          name: 'meditaitons.chat',
+          requestId: 'request-123',
+          inputs: { safe: { historyMessages: 0 } },
+        },
+        async () => observeStage('selector', 'request-123', async () => 'IN_SCOPE'),
+      ),
+    ).resolves.toBe('IN_SCOPE');
+
+    expect(tracedOperations).toEqual([
+      { name: 'meditaitons.chat', requestId: 'request-123' },
+      { name: 'selector', requestId: 'request-123' },
+    ]);
+  });
+
+  it('keeps tracing inert when no provider is configured', async () => {
+    const work = vi.fn(async () => 'unchanged');
+
+    await expect(
+      observeTrace({ name: 'meditaitons.chat', requestId: 'request-123' }, work),
+    ).resolves.toBe('unchanged');
+    expect(work).toHaveBeenCalledOnce();
   });
 
   it('prints readable routing flags and redacts email addresses in the message preview', () => {

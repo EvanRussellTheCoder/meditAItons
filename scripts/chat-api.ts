@@ -14,8 +14,10 @@ import type {
   MeditationScheduleConfirmation,
 } from '../src/app/core/models/chat.models';
 import {
+  configurePipelineTracer,
   logRequestCompleted,
   logRequestStarted,
+  observeTrace,
   observeStage,
   requestIdFromHeader,
 } from '../src/app/core/observability';
@@ -39,6 +41,7 @@ import {
   SchedulingOperationError,
   validTimezone,
 } from '../src/app/core/scheduling';
+import { createLangSmithObservability } from './langsmith-observability';
 
 const DEFAULT_API_HOST = '127.0.0.1';
 const DEFAULT_API_PORT = 3_000;
@@ -57,6 +60,10 @@ async function main(): Promise<void> {
   const embeddingModel =
     process.env['OPENAI_EMBEDDING_MODEL']?.trim() || DEFAULT_OPENAI_EMBEDDING_MODEL;
   const routerModel = process.env['OPENAI_ROUTER_MODEL']?.trim() || DEFAULT_OPENAI_ROUTER_MODEL;
+  const answerModel = process.env['OPENAI_CHAT_MODEL']?.trim() || DEFAULT_OPENAI_CHAT_MODEL;
+  const moderationModel =
+    process.env['OPENAI_MODERATION_MODEL']?.trim() || DEFAULT_OPENAI_MODERATION_MODEL;
+  const namespace = process.env['PINECONE_NAMESPACE']?.trim() || DEFAULT_NAMESPACE;
   const calendar = new CalComClient({
     apiKey: requiredEnvironmentValue('CAL_API_KEY'),
     eventTypeId: requiredPositiveIntegerEnvironmentValue('CAL_EVENT_TYPE_ID'),
@@ -71,7 +78,7 @@ async function main(): Promise<void> {
       moderation: new OpenAIModerationClient({
         apiKey,
         baseUrl,
-        model: process.env['OPENAI_MODERATION_MODEL']?.trim() || DEFAULT_OPENAI_MODERATION_MODEL,
+        model: moderationModel,
       }),
       classifier: new OpenAIScopeClassifier({
         apiKey,
@@ -93,13 +100,15 @@ async function main(): Promise<void> {
     answers: new OpenAIGroundedAnswerClient({
       apiKey,
       baseUrl,
-      model: process.env['OPENAI_CHAT_MODEL']?.trim() || DEFAULT_OPENAI_CHAT_MODEL,
+      model: answerModel,
     }),
     scheduling,
-    namespace: process.env['PINECONE_NAMESPACE']?.trim() || DEFAULT_NAMESPACE,
+    namespace,
     embeddingModel,
   });
   await observeStage('pinecone.preflight', 'startup', () => service.initialize());
+  const langSmith = await createLangSmithObservability();
+  configurePipelineTracer(langSmith.tracer);
 
   const host = process.env['MEDITATIONS_API_HOST']?.trim() || DEFAULT_API_HOST;
   if (host !== '127.0.0.1' && host !== 'localhost') {
@@ -154,16 +163,87 @@ async function main(): Promise<void> {
       try {
         const requestBody = await readJsonBody(request);
         if (isChatRequest) {
+          const chatRequest = validateChatRequest(requestBody);
           sendJson(
             response,
             200,
-            await service.respond(validateChatRequest(requestBody), requestId),
+            await observeTrace(
+              {
+                name: 'meditaitons.chat',
+                requestId,
+                inputs: {
+                  safe: {
+                    timezone: chatRequest.timezone,
+                    historyMessages: chatRequest.history.length,
+                    messageCharacters: chatRequest.message.length,
+                  },
+                  content: {
+                    message: chatRequest.message,
+                    history: chatRequest.history,
+                  },
+                },
+                outputs: (result) => ({
+                  safe: {
+                    route: result.route,
+                    reason: result.reason,
+                    citationCount: result.citations.length,
+                    citationReferences: result.citations.map((item) => item.canonicalRef),
+                    schedulingProposalPresent: result.schedulingProposal !== null,
+                  },
+                  content: {
+                    message: result.message,
+                    citations: result.citations,
+                    schedulingProposal: result.schedulingProposal,
+                  },
+                }),
+                metadata: {
+                  namespace,
+                  embeddingModel,
+                  routerModel,
+                  answerModel,
+                  moderationModel,
+                },
+                tags: ['chat'],
+              },
+              () => service.respond(chatRequest, requestId),
+            ),
           );
         } else {
+          const scheduleRequest = validateScheduleRequest(requestBody);
           sendJson(
             response,
             200,
-            await scheduling.confirm(validateScheduleRequest(requestBody), requestId),
+            await observeTrace(
+              {
+                name: 'meditaitons.schedule_confirmation',
+                requestId,
+                inputs: {
+                  safe: {
+                    proposalId: scheduleRequest.proposalId,
+                    date: scheduleRequest.date,
+                    time: scheduleRequest.time,
+                    timezone: scheduleRequest.timezone,
+                    attendeeNameProvided: Boolean(scheduleRequest.attendeeName),
+                    attendeeEmailProvided: Boolean(scheduleRequest.attendeeEmail),
+                  },
+                },
+                outputs: (result) => ({
+                  safe: {
+                    success: result.success,
+                    date: result.date,
+                    time: result.time,
+                    timezone: result.timezone,
+                    startUtc: result.startUtc,
+                    durationMinutes: result.durationMinutes,
+                    bookingUidPresent: Boolean(result.bookingUid),
+                  },
+                  content: { message: result.message },
+                }),
+                metadata: { calendarProvider: 'cal.com' },
+                tags: ['schedule-confirmation'],
+              },
+              () => scheduling.confirm(scheduleRequest, requestId),
+            ),
           );
         }
       } finally {
@@ -219,23 +299,36 @@ async function main(): Promise<void> {
       `[startup] ${JSON.stringify(
         {
           apiUrl: `http://${host}:${port}`,
-          namespace: process.env['PINECONE_NAMESPACE']?.trim() || DEFAULT_NAMESPACE,
+          namespace,
           embeddingModel,
           routerModel,
-          answerModel: process.env['OPENAI_CHAT_MODEL']?.trim() || DEFAULT_OPENAI_CHAT_MODEL,
-          moderationModel:
-            process.env['OPENAI_MODERATION_MODEL']?.trim() || DEFAULT_OPENAI_MODERATION_MODEL,
+          answerModel,
+          moderationModel,
           schedulingEnabled: true,
           meditationDurationMinutes: calendar.durationMinutes,
           calendarWriteRequiresConfirmation: true,
+          langSmithTracingEnabled: langSmith.enabled,
+          langSmithProject: langSmith.project,
+          langSmithContentCaptureEnabled: langSmith.captureContent,
         },
         null,
         2,
       )}`,
     );
   });
+  let stopping = false;
   const stop = (): void => {
-    server.close(() => process.exit(0));
+    if (stopping) {
+      return;
+    }
+    stopping = true;
+    server.close(() => {
+      void (async () => {
+        await langSmith.tracer?.flush?.();
+        langSmith.tracer?.cleanup?.();
+        process.exit(0);
+      })();
+    });
   };
   process.once('SIGINT', stop);
   process.once('SIGTERM', stop);

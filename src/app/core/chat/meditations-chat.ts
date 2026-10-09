@@ -62,11 +62,39 @@ export class MeditationsChatService {
     const recentUserMessages = request.history
       .filter((item) => item.author === 'user')
       .map((item) => item.content);
-    const routing = await observeStage('selector', requestId, () =>
-      this.dependencies.router.route({
-        message: request.message,
-        recentUserMessages,
-      }),
+    const routing = await observeStage(
+      'selector',
+      requestId,
+      () =>
+        this.dependencies.router.route({
+          message: request.message,
+          recentUserMessages,
+        }),
+      {
+        inputs: {
+          safe: {
+            messageCharacters: request.message.length,
+            recentUserMessages: recentUserMessages.length,
+          },
+          content: {
+            message: request.message,
+            recentUserMessages,
+          },
+        },
+        outputs: (decision) => ({
+          safe: {
+            route: decision.route,
+            reason: decision.reason,
+            source: decision.source,
+            retrieve: decision.retrieve,
+            safetyKind: decision.safetyKind ?? null,
+          },
+          content: {
+            userMessage: decision.userMessage,
+            suggestedReflection: decision.suggestedReflection ?? null,
+          },
+        }),
+      },
     );
     logRoutingDecision({
       requestId,
@@ -99,20 +127,100 @@ export class MeditationsChatService {
       };
     }
 
-    const [queryVector] = await observeStage('embedding', requestId, () =>
-      this.dependencies.embeddings.createEmbeddings([request.message]),
+    const [queryVector] = await observeStage(
+      'embedding',
+      requestId,
+      () => this.dependencies.embeddings.createEmbeddings([request.message]),
+      {
+        runType: 'embedding',
+        inputs: {
+          safe: {
+            model: this.dependencies.embeddingModel,
+            inputCount: 1,
+            inputCharacters: request.message.length,
+          },
+          content: { texts: [request.message] },
+        },
+        outputs: (vectors) => ({
+          safe: {
+            vectorCount: vectors.length,
+            dimensions: vectors[0]?.length ?? 0,
+          },
+        }),
+      },
     );
-    const matches = await observeStage('pinecone', requestId, () =>
-      this.dependencies.pinecone.queryByVector(this.dependencies.namespace, queryVector, this.topK),
+    const matches = await observeStage(
+      'pinecone',
+      requestId,
+      () =>
+        this.dependencies.pinecone.queryByVector(
+          this.dependencies.namespace,
+          queryVector,
+          this.topK,
+        ),
+      {
+        runType: 'retriever',
+        inputs: {
+          safe: {
+            namespace: this.dependencies.namespace,
+            topK: this.topK,
+            vectorDimensions: queryVector.length,
+          },
+        },
+        outputs: (items) => ({
+          safe: {
+            matchCount: items.length,
+            matches: items.map((item) => ({
+              id: item.id,
+              score: item.score,
+              canonicalRef: item.metadata['canonical_ref'] ?? null,
+            })),
+          },
+          content: {
+            matches: items.map((item) => ({
+              id: item.id,
+              score: item.score,
+              canonicalRef: item.metadata['canonical_ref'] ?? null,
+              chunkText: item.metadata['chunk_text'] ?? null,
+              parentText: item.metadata['parent_text'] ?? null,
+              sourceUrl: item.metadata['source_url'] ?? null,
+            })),
+          },
+        }),
+      },
     );
     validateMatchEmbeddings(matches, this.dependencies.embeddingModel, OPENAI_EMBEDDING_DIMENSIONS);
     const evidence = createEvidence(matches);
-    const answer = await observeStage('grounded_answer', requestId, () =>
-      this.dependencies.answers.generate({
-        message: request.message,
-        history: request.history,
-        evidence,
-      }),
+    const answer = await observeStage(
+      'grounded_answer',
+      requestId,
+      () =>
+        this.dependencies.answers.generate({
+          message: request.message,
+          history: request.history,
+          evidence,
+        }),
+      {
+        inputs: {
+          safe: {
+            historyMessages: request.history.length,
+            evidenceCount: evidence.length,
+            evidenceReferences: evidence.map((item) => item.canonicalRef),
+          },
+          content: {
+            message: request.message,
+            history: request.history,
+            evidence,
+          },
+        },
+        outputs: (result) => ({
+          safe: {
+            sufficientEvidence: result.sufficientEvidence,
+            citedReferences: result.citedReferences,
+          },
+          content: { answer: result.answer },
+        }),
+      },
     );
     if (!answer.sufficientEvidence) {
       return {

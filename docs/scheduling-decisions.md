@@ -85,11 +85,15 @@ It complements the routing and localhost-chat decision logs.
     tradeoff is that a server restart invalidates pending proposal IDs. Durable, authenticated
     scheduling would require a database and user identity before production deployment.
 
-19. **Testing stops short of an unapproved real booking.** Unit tests use a mocked Cal endpoint to
-    verify the exact request, consent boundary, no automatic retry, duplicate prevention, time-zone
-    conversion, DST behavior, and Angular confirmation flow. A read-only live preflight verifies
-    the configured key, event ID, duration, booking fields, and location. Creating a real event is
-    reserved for an actual user-supplied name, email, future time, and explicit confirmation.
+19. **Live booking tests require explicit confirmation and a deliverable attendee address.** Unit
+    tests use a mocked Cal endpoint to verify the exact request, consent boundary, no automatic
+    retry, duplicate prevention, time-zone conversion, DST behavior, and Angular confirmation flow.
+    A read-only live preflight verifies the configured key, event ID, duration, booking fields,
+    location, and available slots. An explicitly approved synthetic booking attempt reached Cal.com
+    but the provider rejected the placeholder address as unable to receive mail, so no event was
+    created. A successful live test therefore requires an actual user-supplied name, deliverable
+    email, future available time, and explicit confirmation; the application must not invent or
+    substitute attendee identity.
 
 20. **Terminal logs expose the scheduler's decisions without attendee identity.** The correlated
     scheduling summary shows extraction status, ambiguity, selected date/time, whether each value

@@ -182,6 +182,54 @@ Every line for one request shares an `X-Request-Id`. API keys, attendee names/em
 responses, and booking identifiers are excluded. Full field and privacy decisions are documented in
 [`docs/observability-decisions.md`](docs/observability-decisions.md).
 
+### Optional LangSmith traces
+
+The localhost runtime API can mirror its request and stage boundaries to LangSmith without changing
+the existing OpenAI, Pinecone, or Cal.com clients. Tracing is disabled by default. To inspect a run,
+add your real LangSmith key to the untracked `.env` file and enable tracing only while using synthetic
+development prompts:
+
+```dotenv
+LANGSMITH_TRACING=true
+LANGSMITH_API_KEY=your-real-langsmith-key
+LANGSMITH_PROJECT=meditaitons-local
+MEDITATIONS_LANGSMITH_CAPTURE_CONTENT=true
+```
+
+Leave `MEDITATIONS_LANGSMITH_CAPTURE_CONTENT=false` to send only structural metadata such as stage
+names, routes, model names, counts, durations, and safe error identities. When content capture is
+enabled, chat text, history, retrieved evidence, and answer text are sent to the configured LangSmith
+project; use synthetic content only. Scheduling attendee names/emails, booking identifiers, API keys,
+authorization values, raw embedding vectors, and raw provider errors are always excluded or redacted.
+
+Each LangSmith root includes the same request ID shown in the terminal and returned as
+`X-Request-Id`. An in-scope chat trace contains `selector`, `embedding`, `pinecone`, and
+`grounded_answer` children. Scheduling branches contain only the stages they actually execute.
+`LANGSMITH_ENDPOINT` may be set to the HTTPS endpoint for a non-default LangSmith region.
+
+The six router outcomes have been exercised end to end with tracing enabled. Expected trace shapes
+are:
+
+| Route | Child spans |
+| --- | --- |
+| `IN_SCOPE` | `selector`, `embedding`, `pinecone`, `grounded_answer` |
+| `SCHEDULE` | `selector`, `scheduling` |
+| `REFRAME` | `selector` |
+| `OUT_OF_SCOPE` | `selector` |
+| `NEEDS_CLARIFICATION` | `selector` |
+| `SAFETY` | `selector` |
+
+A confirmed scheduling submission is a separate `meditaitons.schedule_confirmation` root with a
+`cal.com` child. Provider rejection is recorded as an error on both spans without uploading the raw
+provider response. A disabled-tracing control confirmed that normal API behavior is preserved and
+no LangSmith run is uploaded when `LANGSMITH_TRACING=false`.
+
+Run the adapter-specific regression suite with:
+
+```bash
+npm run test:server
+```
+
 ## Architecture
 
 The full architecture and behavioral contract are documented in
@@ -206,4 +254,5 @@ invariants, algorithm choices, and extension points are recorded in
 ## Asset note
 
 The Marcus Aurelius portrait in `public/assets/marcus-aurelius.png` was generated specifically for this project and optimized for circular avatar crops.
+
 # meditAItons

@@ -9,6 +9,7 @@
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
+    "test:server": "vitest run scripts/langsmith-observability.spec.ts",
     "test:responsive": "playwright test",
     "ingest:meditations": "tsx scripts/ingest-meditations.ts",
     "chunk:meditations": "tsx scripts/ingest-meditations.ts",
@@ -31,6 +32,7 @@
     "@angular/forms": "^21.2.0",
     "@angular/platform-browser": "^21.2.0",
     "@angular/router": "^21.2.0",
+    "langsmith": "^0.10.11",
     "rxjs": "~7.8.0",
     "tslib": "^2.3.0"
   },
