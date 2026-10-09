@@ -96,10 +96,10 @@ It complements the routing and localhost-chat decision logs.
     came from conversation or a visible default, proposal/card versus clarification, confirmation,
     and definite versus uncertain Cal.com outcomes. It never prints the attendee name or email.
 
-21. **The application mirrors the event type's 12-hour minimum notice rule.** Times inside the
-    next 12 hours are rejected before a proposal is shown and are validated again after card edits,
-    before any Cal.com request. The confirmation card states the limit and encourages choosing a
-    later, protected time for practice.
+21. **The application accepts any strictly future time.** Past and present times are rejected before
+    a proposal is shown and are validated again after card edits, before any Cal.com request. The
+    confirmation card states the future-only boundary. Availability and any other booking limits
+    remain controlled by the configured Cal.com event type.
 
 ## Alternatives considered
 

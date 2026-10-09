@@ -28,7 +28,7 @@ describe('SchedulingCardComponent', () => {
 
     expect(fixture.nativeElement.textContent).toContain('Nothing will be booked until you confirm');
     expect(fixture.nativeElement.textContent).toContain(
-      'Scheduled meditation times need at least 12 hours\u2019 notice',
+      'Choose any future date and time for your meditation session',
     );
     expect(confirmed).toHaveBeenCalledWith({
       date: '2026-08-18',

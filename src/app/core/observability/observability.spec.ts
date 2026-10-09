@@ -91,6 +91,31 @@ describe('pipeline observability', () => {
     expect(output).not.toContain('attendeeName"');
   });
 
+  it('logs a non-future proposal rejection without implying a minimum notice window', () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+
+    logSchedulingProposalDecision({
+      requestId: 'request-123',
+      extraction: {
+        status: 'ready',
+        suggestedDate: '2026-08-18',
+        suggestedTime: '09:00',
+        ambiguity: 'none',
+        clarificationMessage: null,
+      },
+      selectedDate: '2026-08-18',
+      selectedTime: '09:00',
+      timezone: 'UTC',
+      durationMinutes: 30,
+      blockReason: 'time_not_future',
+    });
+
+    const output = info.mock.calls.flat().join('\n');
+    expect(output).toContain('"action": "request_future_time"');
+    expect(output).toContain('The selected time is not in the future');
+    expect(output).not.toContain('minimum notice');
+  });
+
   it('accepts only bounded log-safe request ids', () => {
     expect(requestIdFromHeader('client-request_123')).toBe('client-request_123');
     expect(requestIdFromHeader('bad id\nforged-log')).not.toBe('bad id\nforged-log');

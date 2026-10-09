@@ -17,16 +17,11 @@ import type {
   SchedulingProposalRequest,
   SchedulingProposalResult,
 } from './types';
-import {
-  MINIMUM_SCHEDULING_NOTICE_HOURS,
-  MINIMUM_SCHEDULING_NOTICE_MESSAGE,
-  SchedulingOperationError,
-} from './types';
+import { SchedulingOperationError } from './types';
 
 const TIME_PATTERN = /^(?:[01]\d|2[0-3]):[0-5]\d$/u;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/u;
 const PROPOSAL_TTL_MS = 30 * 60 * 1_000;
-const MINIMUM_SCHEDULING_NOTICE_MS = MINIMUM_SCHEDULING_NOTICE_HOURS * 60 * 60 * 1_000;
 
 interface StoredProposal {
   readonly expiresAt: number;
@@ -93,7 +88,7 @@ export class MeditationScheduler
     const selectedDate = extraction.suggestedDate ?? nextBusinessDate(localToday);
     const selectedTime = extraction.suggestedTime ?? '09:00';
     const selectedStartUtc = localWallClockToUtc(selectedDate, selectedTime, request.timezone);
-    if (isInsideMinimumNoticeWindow(selectedStartUtc, currentDate)) {
+    if (Date.parse(selectedStartUtc) <= currentDate.getTime()) {
       logSchedulingProposalDecision({
         requestId: request.requestId,
         extraction,
@@ -101,10 +96,10 @@ export class MeditationScheduler
         selectedTime,
         timezone: request.timezone,
         durationMinutes: this.dependencies.calendar.durationMinutes,
-        blockReason: 'minimum_notice',
+        blockReason: 'time_not_future',
       });
       return {
-        message: MINIMUM_SCHEDULING_NOTICE_MESSAGE,
+        message: 'Choose a meditation time in the future.',
         proposal: null,
       };
     }
@@ -180,15 +175,6 @@ export class MeditationScheduler
         true,
       );
     }
-    if (isInsideMinimumNoticeWindow(startUtc, now)) {
-      throw new SchedulingOperationError(
-        400,
-        'minimum_scheduling_notice',
-        MINIMUM_SCHEDULING_NOTICE_MESSAGE,
-        true,
-      );
-    }
-
     stored.status = 'in_flight';
     logSchedulingConfirmation({
       requestId,
@@ -271,10 +257,6 @@ export class MeditationScheduler
       }
     }
   }
-}
-
-function isInsideMinimumNoticeWindow(startUtc: string, now: Date): boolean {
-  return Date.parse(startUtc) < now.getTime() + MINIMUM_SCHEDULING_NOTICE_MS;
 }
 
 class CalendarBookingResultError extends Error {

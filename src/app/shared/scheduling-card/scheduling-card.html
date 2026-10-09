@@ -14,9 +14,8 @@
 
   <p class="consent-note">Nothing will be booked until you confirm these details.</p>
 
-  <p id="schedule-minimum-notice" class="minimum-notice">
-    Scheduled meditation times need at least {{ minimumNoticeHours }} hours’ notice. Choose a later
-    time so you can protect the space and arrive without rushing.
+  <p id="schedule-time-guidance" class="time-guidance">
+    Choose any future date and time for your meditation session.
   </p>
 
   <div class="time-grid">
@@ -26,7 +25,7 @@
         type="date"
         required
         [value]="date()"
-        aria-describedby="schedule-minimum-notice"
+        aria-describedby="schedule-time-guidance"
         [disabled]="submitting()"
         (input)="update('date', $event)"
       />
@@ -37,7 +36,7 @@
         type="time"
         required
         [value]="time()"
-        aria-describedby="schedule-minimum-notice"
+        aria-describedby="schedule-time-guidance"
         [disabled]="submitting()"
         (input)="update('time', $event)"
       />
