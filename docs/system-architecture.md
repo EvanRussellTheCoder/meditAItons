@@ -194,7 +194,7 @@ sequenceDiagram
   participant Answer as Grounded answer model
 
   User->>Angular: Submit a message
-  Angular->>API: POST /api/chat with bounded history
+  Angular->>API: POST /api/chat with bounded history and assistant safety metadata
   API->>Rules: Check high-signal safety and input cases
   Rules-->>API: Return immediately when matched
   API->>Moderation: Moderate remaining messages
@@ -232,8 +232,11 @@ the AI backend.
 `ChatStore` owns the displayed conversation, chat and booking request state, pending scheduling
 proposal, reset behavior, and bounded history sent to the server. It persists conversation messages
 in browser `localStorage` under the versioned key `meditations.conversation.v3`; attendee name and
-email are not persisted. A reset increments a request generation number so an older slow chat
-response cannot appear in a newly reset conversation, and reset is disabled during a booking.
+email are not persisted. Assistant messages may also carry validated `route`, `safetyKind`, and
+`deferredSafetyTopic` metadata. User messages never carry those fields. This browser metadata is the
+state carrier for an unresolved safety exchange; there is no server-side session database. A reset
+increments a request generation number so an older slow chat response cannot appear in a newly
+reset conversation, and reset is disabled during a booking.
 
 `ChatApiClient` sends requests to same-origin `/api/chat` and confirmed proposals to
 `/api/schedule`. It treats both responses as untrusted at runtime and validates route/reason,
@@ -277,6 +280,8 @@ A successful in-scope response has this shape:
 {
   "route": "IN_SCOPE",
   "reason": "PERSONAL_REFLECTION",
+  "safetyKind": null,
+  "deferredSafetyTopic": null,
   "message": "Generated guidance grounded in a cited section.",
   "citations": [
     {
@@ -288,6 +293,27 @@ A successful in-scope response has this shape:
   "schedulingProposal": null
 }
 ```
+
+An unresolved intent-safety response can additionally carry one postponed topic:
+
+```json
+{
+  "route": "SAFETY",
+  "reason": "SAFETY_FOLLOW_UP_REQUIRED",
+  "safetyKind": "VIOLENCE_IMMINENT",
+  "deferredSafetyTopic": {
+    "label": "your concerns about AI and job security",
+    "message": "I want to talk about my fear that AI will replace me at work."
+  },
+  "message": "Before we talk about your concerns about AI and job security, I need to make sure everyone is safe. ...",
+  "citations": [],
+  "schedulingProposal": null
+}
+```
+
+`deferredSafetyTopic` is required and nullable on every API response. A non-null value is valid only
+for an assistant `SAFETY` entry with a self-harm or violence kind. Older stored conversations without
+this field remain compatible.
 
 A scheduling response uses `route: "SCHEDULE"`, contains no citations, and either returns a short
 clarification with `schedulingProposal: null` or a proposal with a one-time ID, suggested local
@@ -320,12 +346,58 @@ Routing order is significant:
 
 1. Deterministic high-signal rules catch known self-harm, violence, abuse, eating-distress,
    reality-distress, empty, overlong, nonsense, and ambiguous physical-need cases.
-2. OpenAI moderation checks messages not handled by the first pass.
-3. A structured-output scope classifier handles the remaining semantic decision.
+2. OpenAI moderation checks messages not handled by the first pass and supplies a signal for any
+   pending self-harm or violence reassessment.
+3. When the latest assistant response left an intent-safety concern open, a dedicated structured
+   classifier returns active, follow-up-required, or resolved. Only a resolved exact continuation
+   may proceed to normal routing.
+4. A structured-output scope classifier handles the remaining semantic decision.
 
-Safety has priority over philosophical relevance. Moderation or classifier failure produces
-`NEEDS_CLARIFICATION` and prevents retrieval. This fail-closed behavior favors a temporary non-answer
-over bypassing a safety boundary.
+Current or unresolved safety has priority over philosophical relevance. A safety reassessment
+failure remains on `SAFETY`; other moderation or classifier failures produce a non-retrieval
+fallback. This fail-closed behavior favors a temporary non-answer over bypassing a safety boundary.
+
+When a user introduces a different topic instead of answering an unresolved self-harm or violence
+question, the same structured reassessment may return a short display label and the exact postponed
+substring. The server validates both, and the application inserts the label into fixed safety
+wording. After the check is resolved, the exact postponed substring is re-run through deterministic
+rules and moderation before it can reach classification, scheduling, retrieval, or generation.
+
+```mermaid
+stateDiagram-v2
+  [*] --> NoPendingConcern
+  NoPendingConcern --> PendingIntentSafety: self-harm or violence route
+  PendingIntentSafety --> PendingIntentSafety: ACTIVE
+  PendingIntentSafety --> PendingIntentSafety: FOLLOW_UP_REQUIRED<br/>optionally save or replace topic
+  PendingIntentSafety --> Resolved: explicit required answers
+  Resolved --> RouteCurrentContinuation: current message contains a newer request
+  Resolved --> RecheckDeferredTopic: otherwise a topic was saved
+  Resolved --> AskWhatNext: otherwise
+  RecheckDeferredTopic --> PendingIntentSafety: fresh safety signal
+  RecheckDeferredTopic --> NormalRouting: deterministic and moderation checks pass
+  RouteCurrentContinuation --> NormalRouting
+  NormalRouting --> [*]
+  AskWhatNext --> [*]
+```
+
+The reassessment is deliberately adaptive:
+
+- ambiguous self-harm or violence requires an explicit denial of current thoughts or intent;
+- imminent self-harm or violence additionally requires the plan/action to have stopped and relevant
+  access or proximity to have ended;
+- vague reassurance such as “I'm okay now” remains `FOLLOW_UP_REQUIRED`;
+- contradictory reassurance such as “I'm safe, but I still might do it” remains `ACTIVE`; and
+- a fresh deterministic threat overrides any attempted resolution and starts a new concern.
+
+Only `FOLLOW_UP_REQUIRED` may display the personalized acknowledgement. The model proposes a neutral
+label and exact postponed substring in the existing strict structured response. Application code
+validates the label's prefix, length, whitespace, controls, and markup characters, then combines it
+with fixed kind-specific safety text. `ACTIVE` never displays the saved topic, and neither the label
+nor the surrounding safety exchange is sent downstream.
+
+Resumption uses a fixed precedence: an exact safe continuation in the resolution message, then the
+stored deferred message, then the `SAFETY_RESOLVED` prompt asking what to discuss. The effective
+message alone reaches the scheduler, embedding client, Pinecone, and grounded-answer model.
 
 `REFRAME` never silently searches rewritten text. It proposes a reflective question and waits for
 the user to submit it, keeping the scope transition visible.
@@ -402,28 +474,28 @@ are covered by the project test suite.
 Copy [`.env.example`](../.env.example) to `.env` and provide the required values. Secrets belong
 only in the Node process; they must never be added to Angular environment files or browser code.
 
-| Variable                  | Required                                       | Purpose                                               |
-| ------------------------- | ---------------------------------------------- | ----------------------------------------------------- |
-| `OPENAI_API_KEY`          | Yes for standard-index upload, query, and chat | Moderation, routing, embeddings, and answers          |
-| `PINECONE_API_KEY`        | Yes                                            | Pinecone control/data API authentication              |
-| `PINECONE_INDEX`          | Yes                                            | Index identity used during safety preflight           |
-| `PINECONE_INDEX_HOST`     | Yes                                            | Exact data-plane host for the same index              |
-| `PINECONE_NAMESPACE`      | No                                             | Defaults to `long-1862`                               |
-| `OPENAI_EMBEDDING_MODEL`  | No                                             | Defaults to `text-embedding-3-small`                  |
-| `OPENAI_ROUTER_MODEL`     | No                                             | Defaults to `gpt-5.6-luna`                            |
-| `OPENAI_MODERATION_MODEL` | No                                             | Defaults to `omni-moderation-latest`                  |
-| `OPENAI_CHAT_MODEL`       | No                                             | Defaults to `gpt-5.6-sol`                             |
-| `CAL_API_KEY`             | Yes for localhost chat                         | Server-side Cal.com bearer credential                 |
-| `CAL_EVENT_TYPE_ID`       | Yes for localhost chat                         | Numeric meditation event type                         |
-| `LANGSMITH_TRACING`       | No                                             | Enables server-side runtime tracing when `true`        |
-| `LANGSMITH_API_KEY`       | When LangSmith tracing is enabled              | Server-side LangSmith credential                       |
-| `LANGSMITH_PROJECT`       | No                                             | Trace project; defaults to `meditaitons-local`         |
-| `LANGSMITH_ENDPOINT`      | No                                             | Optional HTTPS endpoint for a non-default region       |
-| `MEDITATIONS_LANGSMITH_CAPTURE_CONTENT` | No                              | Synthetic-only prompt/evidence/answer capture          |
-| `OPENAI_BASE_URL`         | No                                             | Defaults to `https://api.openai.com/v1`               |
-| `MEDITATIONS_API_HOST`    | No                                             | Loopback only; defaults to `127.0.0.1`                |
-| `MEDITATIONS_API_PORT`    | No                                             | Defaults to `3000`                                    |
-| `DATABASE_URL`            | No                                             | Not used by ingestion, retrieval, chat, or scheduling |
+| Variable                                | Required                                       | Purpose                                               |
+| --------------------------------------- | ---------------------------------------------- | ----------------------------------------------------- |
+| `OPENAI_API_KEY`                        | Yes for standard-index upload, query, and chat | Moderation, routing, embeddings, and answers          |
+| `PINECONE_API_KEY`                      | Yes                                            | Pinecone control/data API authentication              |
+| `PINECONE_INDEX`                        | Yes                                            | Index identity used during safety preflight           |
+| `PINECONE_INDEX_HOST`                   | Yes                                            | Exact data-plane host for the same index              |
+| `PINECONE_NAMESPACE`                    | No                                             | Defaults to `long-1862`                               |
+| `OPENAI_EMBEDDING_MODEL`                | No                                             | Defaults to `text-embedding-3-small`                  |
+| `OPENAI_ROUTER_MODEL`                   | No                                             | Defaults to `gpt-5.6-luna`                            |
+| `OPENAI_MODERATION_MODEL`               | No                                             | Defaults to `omni-moderation-latest`                  |
+| `OPENAI_CHAT_MODEL`                     | No                                             | Defaults to `gpt-5.6-sol`                             |
+| `CAL_API_KEY`                           | Yes for localhost chat                         | Server-side Cal.com bearer credential                 |
+| `CAL_EVENT_TYPE_ID`                     | Yes for localhost chat                         | Numeric meditation event type                         |
+| `LANGSMITH_TRACING`                     | No                                             | Enables server-side runtime tracing when `true`       |
+| `LANGSMITH_API_KEY`                     | When LangSmith tracing is enabled              | Server-side LangSmith credential                      |
+| `LANGSMITH_PROJECT`                     | No                                             | Trace project; defaults to `meditaitons-local`        |
+| `LANGSMITH_ENDPOINT`                    | No                                             | Optional HTTPS endpoint for a non-default region      |
+| `MEDITATIONS_LANGSMITH_CAPTURE_CONTENT` | No                                             | Synthetic-only prompt/evidence/answer capture         |
+| `OPENAI_BASE_URL`                       | No                                             | Defaults to `https://api.openai.com/v1`               |
+| `MEDITATIONS_API_HOST`                  | No                                             | Loopback only; defaults to `127.0.0.1`                |
+| `MEDITATIONS_API_PORT`                  | No                                             | Defaults to `3000`                                    |
+| `DATABASE_URL`                          | No                                             | Not used by ingestion, retrieval, chat, or scheduling |
 
 Startup validates that `PINECONE_INDEX` and `PINECONE_INDEX_HOST` describe the same ready index.
 The runtime chat additionally requires a standard dense index with 1536 dimensions.
@@ -563,6 +635,8 @@ Unit tests use fakes for remote services and cover:
 - short, medium, long, overlap, fallback, Unicode, determinism, and boundary chunking cases;
 - Pinecone record construction, request validation, retries, and verification contracts;
 - deterministic safety priority and fail-closed routing;
+- active, incomplete, and resolved self-harm/violence follow-ups, personalized topic deferral,
+  replacement, persistence, exact-message resumption, and fresh moderation before resumption;
 - OpenAI moderation, classification, embedding, and structured-answer wire shapes;
 - schedule routing and extraction, Cal.com wire shape, proposal expiry/duplicate behavior, DST
   boundaries, and the Angular confirmation card;
@@ -585,6 +659,12 @@ and grounded-answer children; only `SCHEDULE` has a scheduling child; the other 
 after `selector`. A confirmed scheduling POST uses a separate root and is the only path that can
 contain a `cal.com` child. Content capture remains a separate synthetic-only opt-in, and disabling
 tracing leaves API behavior unchanged while uploading no runs.
+
+A synthetic deferred-topic evaluation also verifies the transition across turns: the initial
+imminent-violence response and personalized follow-up each contain only `selector`; the resolved
+turn records `resumedDeferredSafetyTopic: true`, the exact effective-message length, and then adds
+`embedding`, `pinecone`, and `grounded_answer`. No downstream span exists while the safety check is
+unresolved.
 
 ## Detailed decision logs
 

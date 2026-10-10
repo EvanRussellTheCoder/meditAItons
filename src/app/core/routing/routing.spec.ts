@@ -2,7 +2,12 @@ import { ROUTING_EVALUATION_CASES } from './edge-cases';
 import { OpenAIModerationClient, OpenAIScopeClassifier } from './openai-routing';
 import { routeDeterministically, safetyKindFromModeration } from './policy';
 import { ConversationRouter } from './router';
-import { ModerationGateway, ScopeClassification, ScopeClassifier } from './types';
+import {
+  ModerationGateway,
+  SafetyFollowUpClassifier,
+  ScopeClassification,
+  ScopeClassifier,
+} from './types';
 
 describe('deterministic conversation routing', () => {
   it('locks the deterministic edge examples to their expected routes', () => {
@@ -37,7 +42,11 @@ describe('conversation router orchestration', () => {
   it('lets deterministic safety bypass both remote services', async () => {
     const moderation = { moderate: vi.fn() } as unknown as ModerationGateway;
     const classifier = { classify: vi.fn() } as unknown as ScopeClassifier;
-    const router = new ConversationRouter({ moderation, classifier });
+    const router = new ConversationRouter({
+      moderation,
+      classifier,
+      safetyFollowUp: unusedSafetyFollowUp(),
+    });
 
     await expect(router.route({ message: 'I want to fight someone.' })).resolves.toMatchObject({
       route: 'SAFETY',
@@ -56,7 +65,11 @@ describe('conversation router orchestration', () => {
       })),
     };
     const classifier = { classify: vi.fn() } as unknown as ScopeClassifier;
-    const router = new ConversationRouter({ moderation, classifier });
+    const router = new ConversationRouter({
+      moderation,
+      classifier,
+      safetyFollowUp: unusedSafetyFollowUp(),
+    });
 
     await expect(router.route({ message: 'I no longer want to exist.' })).resolves.toMatchObject({
       route: 'SAFETY',
@@ -78,7 +91,11 @@ describe('conversation router orchestration', () => {
         suggestedReflection: null,
       })),
     };
-    const router = new ConversationRouter({ moderation, classifier });
+    const router = new ConversationRouter({
+      moderation,
+      classifier,
+      safetyFollowUp: unusedSafetyFollowUp(),
+    });
 
     await expect(router.route({ message: "I'm happy." })).resolves.toMatchObject({
       route: 'IN_SCOPE',
@@ -99,6 +116,7 @@ describe('conversation router orchestration', () => {
     const router = new ConversationRouter({
       moderation: { moderate: vi.fn(async () => ({ flagged: false, categories: {} })) },
       classifier,
+      safetyFollowUp: unusedSafetyFollowUp(),
     });
 
     await expect(
@@ -118,11 +136,407 @@ describe('conversation router orchestration', () => {
     );
   });
 
+  it('keeps vague reassurance in a fixed safety follow-up', async () => {
+    const classifier = { classify: vi.fn() } as unknown as ScopeClassifier;
+    const safetyFollowUp: SafetyFollowUpClassifier = {
+      assessSafetyFollowUp: vi.fn(
+        async () =>
+          ({
+            status: 'FOLLOW_UP_REQUIRED',
+            safetyKind: 'VIOLENCE_AMBIGUOUS',
+            continuationMessage: null,
+            deferredSafetyTopic: null,
+          }) as const,
+      ),
+    };
+    const router = new ConversationRouter({
+      moderation: { moderate: vi.fn(async () => ({ flagged: false, categories: {} })) },
+      classifier,
+      safetyFollowUp,
+    });
+
+    await expect(
+      router.route({
+        message: "I'm okay now.",
+        pendingSafety: { kind: 'VIOLENCE_AMBIGUOUS' },
+      }),
+    ).resolves.toMatchObject({
+      route: 'SAFETY',
+      reason: 'SAFETY_FOLLOW_UP_REQUIRED',
+      safetyKind: 'VIOLENCE_AMBIGUOUS',
+      safetyFollowUpStatus: 'FOLLOW_UP_REQUIRED',
+      retrieve: false,
+    });
+    expect(classifier.classify).not.toHaveBeenCalled();
+  });
+
+  it('acknowledges a deferred topic while keeping the fixed safety question', async () => {
+    const classifier = { classify: vi.fn() } as unknown as ScopeClassifier;
+    const deferredSafetyTopic = {
+      label: 'your concerns about AI and job security',
+      message: 'Can we talk about my fear of AI replacing me at work?',
+    } as const;
+    const router = new ConversationRouter({
+      moderation: { moderate: vi.fn(async () => ({ flagged: false, categories: {} })) },
+      classifier,
+      safetyFollowUp: {
+        assessSafetyFollowUp: vi.fn(
+          async () =>
+            ({
+              status: 'FOLLOW_UP_REQUIRED',
+              safetyKind: 'VIOLENCE_IMMINENT',
+              continuationMessage: null,
+              deferredSafetyTopic,
+            }) as const,
+        ),
+      },
+    });
+
+    await expect(
+      router.route({
+        message: deferredSafetyTopic.message,
+        pendingSafety: { kind: 'VIOLENCE_IMMINENT' },
+      }),
+    ).resolves.toMatchObject({
+      route: 'SAFETY',
+      safetyKind: 'VIOLENCE_IMMINENT',
+      deferredSafetyTopic,
+      userMessage: expect.stringMatching(
+        /^Before we talk about your concerns about AI and job security, I need to make sure everyone is safe\./u,
+      ),
+    });
+    expect(classifier.classify).not.toHaveBeenCalled();
+  });
+
+  it('preserves but does not mention a deferred topic while danger is active', async () => {
+    const deferredSafetyTopic = {
+      label: 'your concerns about AI and job security',
+      message: 'Can we talk about my fear of AI replacing me at work?',
+    } as const;
+    const router = new ConversationRouter({
+      moderation: { moderate: vi.fn(async () => ({ flagged: false, categories: {} })) },
+      classifier: { classify: vi.fn() } as unknown as ScopeClassifier,
+      safetyFollowUp: {
+        assessSafetyFollowUp: vi.fn(
+          async () =>
+            ({
+              status: 'ACTIVE',
+              safetyKind: 'VIOLENCE_IMMINENT',
+              continuationMessage: null,
+              deferredSafetyTopic: null,
+            }) as const,
+        ),
+      },
+    });
+
+    const decision = await router.route({
+      message: "I'm safe, but I still might do it.",
+      pendingSafety: { kind: 'VIOLENCE_IMMINENT', deferredSafetyTopic },
+    });
+
+    expect(decision).toMatchObject({
+      route: 'SAFETY',
+      safetyFollowUpStatus: 'ACTIVE',
+      deferredSafetyTopic,
+    });
+    expect(decision.userMessage).not.toContain('AI and job security');
+  });
+
+  it('re-moderates and resumes a stored deferred topic after safety resolves', async () => {
+    const deferredSafetyTopic = {
+      label: 'your concerns about AI and job security',
+      message: 'Can we talk about my fear of AI replacing me at work?',
+    } as const;
+    const moderation = vi.fn(async () => ({ flagged: false, categories: {} }));
+    const classifier: ScopeClassifier = {
+      classify: vi.fn(async (): Promise<ScopeClassification> => ({
+        route: 'IN_SCOPE',
+        reason: 'PERSONAL_REFLECTION',
+        safetyKind: null,
+        suggestedReflection: null,
+      })),
+    };
+    const router = new ConversationRouter({
+      moderation: { moderate: moderation },
+      classifier,
+      safetyFollowUp: {
+        assessSafetyFollowUp: vi.fn(
+          async () =>
+            ({
+              status: 'RESOLVED',
+              safetyKind: 'VIOLENCE_IMMINENT',
+              continuationMessage: null,
+              deferredSafetyTopic: null,
+            }) as const,
+        ),
+      },
+    });
+
+    await expect(
+      router.route({
+        message:
+          "I'm not going to hurt anyone, the plan is off, I put the object down, and I left the area.",
+        pendingSafety: { kind: 'VIOLENCE_IMMINENT', deferredSafetyTopic },
+      }),
+    ).resolves.toMatchObject({
+      route: 'IN_SCOPE',
+      effectiveMessage: deferredSafetyTopic.message,
+      resumedDeferredSafetyTopic: deferredSafetyTopic,
+      safetyFollowUpStatus: 'RESOLVED',
+    });
+    expect(moderation).toHaveBeenNthCalledWith(2, deferredSafetyTopic.message);
+    expect(classifier.classify).toHaveBeenCalledWith({
+      message: deferredSafetyTopic.message,
+      recentUserMessages: [],
+    });
+  });
+
+  it('routes a stored deferred topic back to safety when fresh moderation flags it', async () => {
+    const deferredSafetyTopic = {
+      label: 'your thoughts about whether life is worth continuing',
+      message: 'I have been considering whether life is worth continuing.',
+    } as const;
+    const moderation = vi
+      .fn()
+      .mockResolvedValueOnce({ flagged: false, categories: {} })
+      .mockResolvedValueOnce({ flagged: true, categories: { 'self-harm': true } });
+    const classifier = { classify: vi.fn() } as unknown as ScopeClassifier;
+    const router = new ConversationRouter({
+      moderation: { moderate: moderation },
+      classifier,
+      safetyFollowUp: {
+        assessSafetyFollowUp: vi.fn(
+          async () =>
+            ({
+              status: 'RESOLVED',
+              safetyKind: 'VIOLENCE_IMMINENT',
+              continuationMessage: null,
+              deferredSafetyTopic: null,
+            }) as const,
+        ),
+      },
+    });
+
+    await expect(
+      router.route({
+        message:
+          "I'm not going to hurt anyone, the plan is off, I put the object down, and I left the area.",
+        pendingSafety: { kind: 'VIOLENCE_IMMINENT', deferredSafetyTopic },
+      }),
+    ).resolves.toMatchObject({
+      route: 'SAFETY',
+      safetyKind: 'SELF_HARM_AMBIGUOUS',
+      source: 'moderation',
+    });
+    expect(moderation).toHaveBeenNthCalledWith(2, deferredSafetyTopic.message);
+    expect(classifier.classify).not.toHaveBeenCalled();
+  });
+
+  it('replaces an older deferred topic with the newest valid follow-up topic', async () => {
+    const olderTopic = {
+      label: 'your concerns about AI and job security',
+      message: 'Can we talk about my fear of AI replacing me at work?',
+    } as const;
+    const newerTopic = {
+      label: 'your conflict with your manager',
+      message: 'Can we talk about the conflict with my manager instead?',
+    } as const;
+    const router = new ConversationRouter({
+      moderation: { moderate: vi.fn(async () => ({ flagged: false, categories: {} })) },
+      classifier: { classify: vi.fn() } as unknown as ScopeClassifier,
+      safetyFollowUp: {
+        assessSafetyFollowUp: vi.fn(
+          async () =>
+            ({
+              status: 'FOLLOW_UP_REQUIRED',
+              safetyKind: 'VIOLENCE_IMMINENT',
+              continuationMessage: null,
+              deferredSafetyTopic: newerTopic,
+            }) as const,
+        ),
+      },
+    });
+
+    await expect(
+      router.route({
+        message: newerTopic.message,
+        pendingSafety: { kind: 'VIOLENCE_IMMINENT', deferredSafetyTopic: olderTopic },
+      }),
+    ).resolves.toMatchObject({
+      route: 'SAFETY',
+      deferredSafetyTopic: newerTopic,
+      userMessage: expect.stringContaining(newerTopic.label),
+    });
+  });
+
+  it('uses an exact resolved continuation for normal routing despite a moderation signal', async () => {
+    const classifier: ScopeClassifier = {
+      classify: vi.fn(async (): Promise<ScopeClassification> => ({
+        route: 'IN_SCOPE',
+        reason: 'PERSONAL_REFLECTION',
+        safetyKind: null,
+        suggestedReflection: null,
+      })),
+    };
+    const safetyFollowUp: SafetyFollowUpClassifier = {
+      assessSafetyFollowUp: vi.fn(
+        async () =>
+          ({
+            status: 'RESOLVED',
+            safetyKind: 'VIOLENCE_AMBIGUOUS',
+            continuationMessage: 'Help me reflect on my anger.',
+            deferredSafetyTopic: null,
+          }) as const,
+      ),
+    };
+    const router = new ConversationRouter({
+      moderation: {
+        moderate: vi.fn(async () => ({ flagged: true, categories: { violence: true } })),
+      },
+      classifier,
+      safetyFollowUp,
+    });
+    const message = "I'm not thinking about hurting anyone now. Help me reflect on my anger.";
+
+    const decision = await router.route({
+      message,
+      pendingSafety: {
+        kind: 'VIOLENCE_AMBIGUOUS',
+        deferredSafetyTopic: {
+          label: 'your earlier work concern',
+          message: 'Help me reflect on work.',
+        },
+      },
+    });
+    expect(decision).toMatchObject({
+      route: 'IN_SCOPE',
+      retrieve: true,
+      effectiveMessage: 'Help me reflect on my anger.',
+      safetyFollowUpStatus: 'RESOLVED',
+    });
+    expect(decision).not.toHaveProperty('resumedDeferredSafetyTopic');
+    expect(safetyFollowUp.assessSafetyFollowUp).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message,
+        moderatedSafetyKind: 'VIOLENCE_AMBIGUOUS',
+      }),
+    );
+    expect(classifier.classify).toHaveBeenCalledWith({
+      message: 'Help me reflect on my anger.',
+      recentUserMessages: [],
+    });
+  });
+
+  it('does not downgrade an imminent concern while asking for follow-up', async () => {
+    const router = new ConversationRouter({
+      moderation: { moderate: vi.fn(async () => ({ flagged: false, categories: {} })) },
+      classifier: { classify: vi.fn() } as unknown as ScopeClassifier,
+      safetyFollowUp: {
+        assessSafetyFollowUp: vi.fn(
+          async () =>
+            ({
+              status: 'FOLLOW_UP_REQUIRED',
+              safetyKind: 'VIOLENCE_AMBIGUOUS',
+              continuationMessage: null,
+              deferredSafetyTopic: null,
+            }) as const,
+        ),
+      },
+    });
+
+    await expect(
+      router.route({
+        message: "I won't do it.",
+        pendingSafety: { kind: 'VIOLENCE_IMMINENT' },
+      }),
+    ).resolves.toMatchObject({
+      route: 'SAFETY',
+      safetyKind: 'VIOLENCE_IMMINENT',
+    });
+  });
+
+  it('resolves without retrieval when no separate continuation is present', async () => {
+    const classifier = { classify: vi.fn() } as unknown as ScopeClassifier;
+    const router = new ConversationRouter({
+      moderation: { moderate: vi.fn(async () => ({ flagged: false, categories: {} })) },
+      classifier,
+      safetyFollowUp: {
+        assessSafetyFollowUp: vi.fn(
+          async () =>
+            ({
+              status: 'RESOLVED',
+              safetyKind: 'VIOLENCE_AMBIGUOUS',
+              continuationMessage: null,
+              deferredSafetyTopic: null,
+            }) as const,
+        ),
+      },
+    });
+
+    await expect(
+      router.route({
+        message: 'I am not thinking about hurting anyone right now.',
+        pendingSafety: { kind: 'VIOLENCE_AMBIGUOUS' },
+      }),
+    ).resolves.toMatchObject({
+      route: 'NEEDS_CLARIFICATION',
+      reason: 'SAFETY_RESOLVED',
+      safetyFollowUpStatus: 'RESOLVED',
+      retrieve: false,
+    });
+    expect(classifier.classify).not.toHaveBeenCalled();
+  });
+
+  it('lets a fresh deterministic threat override pending follow-up assessment', async () => {
+    const safetyFollowUp = unusedSafetyFollowUp();
+    const moderation = { moderate: vi.fn() } as unknown as ModerationGateway;
+    const router = new ConversationRouter({
+      moderation,
+      classifier: { classify: vi.fn() } as unknown as ScopeClassifier,
+      safetyFollowUp,
+    });
+
+    await expect(
+      router.route({
+        message: "I'm going to kill myself tonight.",
+        pendingSafety: { kind: 'VIOLENCE_AMBIGUOUS' },
+      }),
+    ).resolves.toMatchObject({
+      route: 'SAFETY',
+      safetyKind: 'SELF_HARM_IMMINENT',
+      source: 'deterministic',
+    });
+    expect(moderation.moderate).not.toHaveBeenCalled();
+    expect(safetyFollowUp.assessSafetyFollowUp).not.toHaveBeenCalled();
+  });
+
+  it('fails closed in SAFETY when follow-up reassessment is unavailable', async () => {
+    const router = new ConversationRouter({
+      moderation: { moderate: vi.fn(async () => ({ flagged: false, categories: {} })) },
+      classifier: { classify: vi.fn() } as unknown as ScopeClassifier,
+      safetyFollowUp: {
+        assessSafetyFollowUp: vi.fn(async () => Promise.reject(new Error('offline'))),
+      },
+    });
+
+    await expect(
+      router.route({
+        message: 'I am not going to hurt anyone.',
+        pendingSafety: { kind: 'VIOLENCE_AMBIGUOUS' },
+      }),
+    ).resolves.toMatchObject({
+      route: 'SAFETY',
+      reason: 'SAFETY_REASSESSMENT_UNAVAILABLE',
+      retrieve: false,
+    });
+  });
+
   it('fails closed when moderation or classification is unavailable', async () => {
     const classifier = { classify: vi.fn() } as unknown as ScopeClassifier;
     const moderationFailure = new ConversationRouter({
       moderation: { moderate: vi.fn(async () => Promise.reject(new Error('offline'))) },
       classifier,
+      safetyFollowUp: unusedSafetyFollowUp(),
     });
     await expect(moderationFailure.route({ message: "I'm calm." })).resolves.toMatchObject({
       route: 'NEEDS_CLARIFICATION',
@@ -134,6 +548,7 @@ describe('conversation router orchestration', () => {
     const classifierFailure = new ConversationRouter({
       moderation: { moderate: vi.fn(async () => ({ flagged: false, categories: {} })) },
       classifier: { classify: vi.fn(async () => Promise.reject(new Error('offline'))) },
+      safetyFollowUp: unusedSafetyFollowUp(),
     });
     await expect(classifierFailure.route({ message: "I'm calm." })).resolves.toMatchObject({
       route: 'NEEDS_CLARIFICATION',
@@ -220,6 +635,142 @@ describe('OpenAI routing clients', () => {
     expect(body.text.format.schema.additionalProperties).toBe(false);
   });
 
+  it('uses structured output for safety follow-up and validates an exact continuation', async () => {
+    const fetchImplementation = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
+      jsonResponse({
+        status: 'completed',
+        output: [
+          {
+            type: 'message',
+            content: [
+              {
+                type: 'output_text',
+                text: JSON.stringify({
+                  status: 'RESOLVED',
+                  safety_kind: 'VIOLENCE_AMBIGUOUS',
+                  continuation_message: 'Help me reflect on my anger.',
+                  deferred_topic_label: null,
+                  deferred_message: null,
+                }),
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    const client = new OpenAIScopeClassifier({ apiKey: 'test-key', fetchImplementation });
+    const message = "I'm not thinking about hurting anyone now. Help me reflect on my anger.";
+
+    await expect(
+      client.assessSafetyFollowUp({
+        message,
+        recentUserMessages: ['I might hurt my neighbor.'],
+        priorSafetyKind: 'VIOLENCE_AMBIGUOUS',
+        moderatedSafetyKind: 'VIOLENCE_AMBIGUOUS',
+      }),
+    ).resolves.toEqual({
+      status: 'RESOLVED',
+      safetyKind: 'VIOLENCE_AMBIGUOUS',
+      continuationMessage: 'Help me reflect on my anger.',
+      deferredSafetyTopic: null,
+    });
+    const [, init] = fetchImplementation.mock.calls[0];
+    const body = JSON.parse(String(init?.body));
+    expect(body.text.format).toMatchObject({
+      type: 'json_schema',
+      name: 'meditations_safety_follow_up',
+      strict: true,
+    });
+    expect(JSON.parse(body.input)).toMatchObject({
+      prior_safety_kind: 'VIOLENCE_AMBIGUOUS',
+      moderation_safety_kind: 'VIOLENCE_AMBIGUOUS',
+      current_message: message,
+    });
+  });
+
+  it('extracts a validated deferred topic from structured safety output', async () => {
+    const message = 'Can we talk about my fear of AI replacing me at work?';
+    const client = new OpenAIScopeClassifier({
+      apiKey: 'test-key',
+      fetchImplementation: async () =>
+        jsonResponse({
+          status: 'completed',
+          output: [
+            {
+              type: 'message',
+              content: [
+                {
+                  type: 'output_text',
+                  text: JSON.stringify({
+                    status: 'FOLLOW_UP_REQUIRED',
+                    safety_kind: 'VIOLENCE_IMMINENT',
+                    continuation_message: null,
+                    deferred_topic_label: 'your concerns about AI and job security',
+                    deferred_message: message,
+                  }),
+                },
+              ],
+            },
+          ],
+        }),
+    });
+
+    await expect(
+      client.assessSafetyFollowUp({
+        message,
+        recentUserMessages: [],
+        priorSafetyKind: 'VIOLENCE_IMMINENT',
+        moderatedSafetyKind: null,
+      }),
+    ).resolves.toMatchObject({
+      status: 'FOLLOW_UP_REQUIRED',
+      deferredSafetyTopic: {
+        label: 'your concerns about AI and job security',
+        message,
+      },
+    });
+  });
+
+  it('discards invalid personalization without discarding the safety assessment', async () => {
+    const message = 'Tell me about AI.';
+    const client = new OpenAIScopeClassifier({
+      apiKey: 'test-key',
+      fetchImplementation: async () =>
+        jsonResponse({
+          status: 'completed',
+          output: [
+            {
+              type: 'message',
+              content: [
+                {
+                  type: 'output_text',
+                  text: JSON.stringify({
+                    status: 'FOLLOW_UP_REQUIRED',
+                    safety_kind: 'VIOLENCE_AMBIGUOUS',
+                    continuation_message: null,
+                    deferred_topic_label: 'your <script>instructions</script>',
+                    deferred_message: message,
+                  }),
+                },
+              ],
+            },
+          ],
+        }),
+    });
+
+    await expect(
+      client.assessSafetyFollowUp({
+        message,
+        recentUserMessages: [],
+        priorSafetyKind: 'VIOLENCE_AMBIGUOUS',
+        moderatedSafetyKind: null,
+      }),
+    ).resolves.toMatchObject({
+      status: 'FOLLOW_UP_REQUIRED',
+      deferredSafetyTopic: null,
+    });
+  });
+
   it('rejects inconsistent structured classifier output', async () => {
     const client = new OpenAIScopeClassifier({
       apiKey: 'test-key',
@@ -289,4 +840,12 @@ function jsonResponse(value: unknown): Response {
     status: 200,
     headers: { 'Content-Type': 'application/json' },
   });
+}
+
+function unusedSafetyFollowUp(): SafetyFollowUpClassifier {
+  return {
+    assessSafetyFollowUp: vi.fn(async () => {
+      throw new Error('safety follow-up was not expected');
+    }),
+  };
 }

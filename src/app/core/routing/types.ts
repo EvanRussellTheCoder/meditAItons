@@ -22,6 +22,17 @@ export const SAFETY_KINDS = [
 
 export type SafetyKind = (typeof SAFETY_KINDS)[number];
 
+export interface DeferredSafetyTopic {
+  /** A short neutral display phrase, such as “your concerns about AI and job security”. */
+  readonly label: string;
+  /** An exact substring of the user message that introduced the postponed request. */
+  readonly message: string;
+}
+
+export const SAFETY_FOLLOW_UP_STATUSES = ['ACTIVE', 'FOLLOW_UP_REQUIRED', 'RESOLVED'] as const;
+
+export type SafetyFollowUpStatus = (typeof SAFETY_FOLLOW_UP_STATUSES)[number];
+
 export const CLASSIFIER_REASONS = [
   'PERSONAL_REFLECTION',
   'CORPUS_QUESTION',
@@ -52,6 +63,9 @@ export const ROUTING_REASONS = [
   'REALITY_DISTRESS_CONCERN',
   'MODERATION_SELF_HARM',
   'MODERATION_VIOLENCE',
+  'SAFETY_FOLLOW_UP_REQUIRED',
+  'SAFETY_REASSESSMENT_UNAVAILABLE',
+  'SAFETY_RESOLVED',
   'SAFETY_CHECK_UNAVAILABLE',
   'ROUTER_UNAVAILABLE',
 ] as const;
@@ -64,6 +78,12 @@ export interface RouteRequest {
   readonly message: string;
   /** Up to six earlier user messages. Assistant text is intentionally excluded. */
   readonly recentUserMessages?: readonly string[];
+  /** Present only while the last routed assistant response left an intent-safety concern open. */
+  readonly pendingSafety?: {
+    /** Null supports conversations saved before safety-kind metadata was persisted. */
+    readonly kind: SafetyKind | null;
+    readonly deferredSafetyTopic?: DeferredSafetyTopic;
+  };
 }
 
 export interface RoutingDecision {
@@ -74,6 +94,13 @@ export interface RoutingDecision {
   readonly userMessage: string;
   readonly safetyKind?: SafetyKind;
   readonly suggestedReflection?: string;
+  /** The exact safe substring to use downstream after a resolved safety follow-up. */
+  readonly effectiveMessage?: string;
+  readonly safetyFollowUpStatus?: SafetyFollowUpStatus;
+  /** Persisted only while an intent-safety check remains unresolved. */
+  readonly deferredSafetyTopic?: DeferredSafetyTopic;
+  /** Set only when a stored deferred topic is resumed after resolution. */
+  readonly resumedDeferredSafetyTopic?: DeferredSafetyTopic;
 }
 
 export interface ModerationResult {
@@ -94,4 +121,22 @@ export interface ModerationGateway {
 
 export interface ScopeClassifier {
   classify(request: RouteRequest): Promise<ScopeClassification>;
+}
+
+export interface SafetyFollowUpRequest {
+  readonly message: string;
+  readonly recentUserMessages: readonly string[];
+  readonly priorSafetyKind: SafetyKind | null;
+  readonly moderatedSafetyKind: SafetyKind | null;
+}
+
+export interface SafetyFollowUpAssessment {
+  readonly status: SafetyFollowUpStatus;
+  readonly safetyKind: SafetyKind;
+  readonly continuationMessage: string | null;
+  readonly deferredSafetyTopic: DeferredSafetyTopic | null;
+}
+
+export interface SafetyFollowUpClassifier {
+  assessSafetyFollowUp(request: SafetyFollowUpRequest): Promise<SafetyFollowUpAssessment>;
 }

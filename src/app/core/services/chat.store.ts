@@ -2,6 +2,7 @@ import { isPlatformBrowser } from '@angular/common';
 import { Injectable, PLATFORM_ID, computed, effect, inject, signal } from '@angular/core';
 import {
   ChatMessage,
+  ChatHistoryMessage,
   MeditationScheduleConfirmation,
   MeditationScheduleProposal,
   StoredChatMessage,
@@ -42,7 +43,13 @@ export class ChatStore {
 
     const history = this._messages()
       .slice(-MAX_API_HISTORY_MESSAGES)
-      .map(({ author, content: messageContent }) => ({ author, content: messageContent }));
+      .map(({ author, content: messageContent, route, safetyKind, deferredSafetyTopic }) => ({
+        author,
+        content: messageContent,
+        ...(author === 'marcus' && route ? { route } : {}),
+        ...(author === 'marcus' && safetyKind ? { safetyKind } : {}),
+        ...(author === 'marcus' && deferredSafetyTopic ? { deferredSafetyTopic } : {}),
+      }));
     const requestId = ++this.activeRequest;
     this.pendingSchedule.set(null);
     this.schedulingError.set(null);
@@ -88,7 +95,7 @@ export class ChatStore {
 
   private async requestReply(
     question: string,
-    history: readonly { readonly author: ChatMessage['author']; readonly content: string }[],
+    history: readonly ChatHistoryMessage[],
     requestId: number,
   ): Promise<void> {
     try {
@@ -108,6 +115,8 @@ export class ChatStore {
           undefined,
           new Date(),
           response.route,
+          response.safetyKind ?? undefined,
+          response.deferredSafetyTopic ?? undefined,
           response.citations,
         ),
       ]);
@@ -152,6 +161,8 @@ export class ChatStore {
     status?: ChatMessage['status'],
     createdAt = new Date(),
     route?: ChatMessage['route'],
+    safetyKind?: ChatMessage['safetyKind'],
+    deferredSafetyTopic?: ChatMessage['deferredSafetyTopic'],
     citations?: ChatMessage['citations'],
   ): ChatMessage {
     return {
@@ -161,6 +172,8 @@ export class ChatStore {
       createdAt,
       status,
       ...(route ? { route } : {}),
+      ...(safetyKind ? { safetyKind } : {}),
+      ...(deferredSafetyTopic ? { deferredSafetyTopic } : {}),
       ...(citations?.length ? { citations } : {}),
     };
   }

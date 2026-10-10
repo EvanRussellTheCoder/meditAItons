@@ -1,4 +1,9 @@
-import type { ChatApiRequest, ChatApiResponse, ChatCitation } from '../models/chat.models';
+import type {
+  ChatApiRequest,
+  ChatApiResponse,
+  ChatCitation,
+  ChatHistoryMessage,
+} from '../models/chat.models';
 import { logRoutingDecision, observeStage } from '../observability';
 import {
   OPENAI_EMBEDDING_DIMENSIONS,
@@ -8,6 +13,7 @@ import {
   PineconeUploadError,
 } from '../pinecone';
 import { ConversationRouter } from '../routing';
+import type { DeferredSafetyTopic, SafetyKind } from '../routing';
 import type { MeditationSchedulingGateway } from '../scheduling';
 import { ChatEvidence, GroundedAnswerGateway } from './openai-grounded-answer';
 
@@ -16,6 +22,7 @@ const MAX_EVIDENCE_PARENTS = 4;
 const INSUFFICIENT_EVIDENCE_MESSAGE =
   "I couldn't find a passage in this edition of Meditations that supports a reliable answer to " +
   'that question. I would rather leave the gap visible than invent Marcus’s view.';
+const SAFETY_RESOLVED_PREFIX = 'Thanks for answering directly. We can continue. ';
 
 export interface MeditationsChatDependencies {
   readonly router: Pick<ConversationRouter, 'route'>;
@@ -59,26 +66,27 @@ export class MeditationsChatService {
    * 6. Abstain when the evidence is insufficient instead of inventing Marcus Aurelius's view.
    */
   async respond(request: ChatApiRequest, requestId?: string): Promise<ChatApiResponse> {
-    const recentUserMessages = request.history
-      .filter((item) => item.author === 'user')
-      .map((item) => item.content);
+    const context = routingContext(request.history);
     const routing = await observeStage(
       'selector',
       requestId,
       () =>
         this.dependencies.router.route({
           message: request.message,
-          recentUserMessages,
+          recentUserMessages: context.recentUserMessages,
+          ...(context.pendingSafety ? { pendingSafety: context.pendingSafety } : {}),
         }),
       {
         inputs: {
           safe: {
             messageCharacters: request.message.length,
-            recentUserMessages: recentUserMessages.length,
+            recentUserMessages: context.recentUserMessages.length,
+            pendingSafetyKind: context.pendingSafety?.kind ?? null,
+            deferredSafetyTopicPresent: Boolean(context.pendingSafety?.deferredSafetyTopic),
           },
           content: {
             message: request.message,
-            recentUserMessages,
+            recentUserMessages: context.recentUserMessages,
           },
         },
         outputs: (decision) => ({
@@ -88,6 +96,12 @@ export class MeditationsChatService {
             source: decision.source,
             retrieve: decision.retrieve,
             safetyKind: decision.safetyKind ?? null,
+            safetyFollowUpStatus: decision.safetyFollowUpStatus ?? null,
+            effectiveMessageCharacters: decision.effectiveMessage?.length ?? null,
+            deferredSafetyTopicPresent: Boolean(decision.deferredSafetyTopic),
+            deferredSafetyTopicLabelCharacters: decision.deferredSafetyTopic?.label.length ?? null,
+            deferredSafetyMessageCharacters: decision.deferredSafetyTopic?.message.length ?? null,
+            resumedDeferredSafetyTopic: Boolean(decision.resumedDeferredSafetyTopic),
           },
           content: {
             userMessage: decision.userMessage,
@@ -102,18 +116,21 @@ export class MeditationsChatService {
       historyMessages: request.history.length,
       decision: routing,
     });
+    const effectiveMessage = routing.effectiveMessage ?? request.message;
     if (!routing.retrieve) {
       if (routing.route === 'SCHEDULE') {
         const scheduling = await this.dependencies.scheduling.propose({
-          message: request.message,
-          history: request.history,
+          message: effectiveMessage,
+          history: context.downstreamHistory,
           timezone: request.timezone,
           ...(requestId ? { requestId } : {}),
         });
         return {
           route: routing.route,
           reason: routing.reason,
-          message: scheduling.message,
+          safetyKind: null,
+          deferredSafetyTopic: null,
+          message: withSafetyResolutionAcknowledgement(scheduling.message, routing),
           citations: [],
           schedulingProposal: scheduling.proposal,
         };
@@ -121,7 +138,10 @@ export class MeditationsChatService {
       return {
         route: routing.route,
         reason: routing.reason,
-        message: routing.userMessage,
+        safetyKind: routing.safetyKind ?? null,
+        deferredSafetyTopic:
+          routing.route === 'SAFETY' ? (routing.deferredSafetyTopic ?? null) : null,
+        message: withSafetyResolutionAcknowledgement(routing.userMessage, routing),
         citations: [],
         schedulingProposal: null,
       };
@@ -130,16 +150,16 @@ export class MeditationsChatService {
     const [queryVector] = await observeStage(
       'embedding',
       requestId,
-      () => this.dependencies.embeddings.createEmbeddings([request.message]),
+      () => this.dependencies.embeddings.createEmbeddings([effectiveMessage]),
       {
         runType: 'embedding',
         inputs: {
           safe: {
             model: this.dependencies.embeddingModel,
             inputCount: 1,
-            inputCharacters: request.message.length,
+            inputCharacters: effectiveMessage.length,
           },
-          content: { texts: [request.message] },
+          content: { texts: [effectiveMessage] },
         },
         outputs: (vectors) => ({
           safe: {
@@ -196,20 +216,20 @@ export class MeditationsChatService {
       requestId,
       () =>
         this.dependencies.answers.generate({
-          message: request.message,
-          history: request.history,
+          message: effectiveMessage,
+          history: context.downstreamHistory,
           evidence,
         }),
       {
         inputs: {
           safe: {
-            historyMessages: request.history.length,
+            historyMessages: context.downstreamHistory.length,
             evidenceCount: evidence.length,
             evidenceReferences: evidence.map((item) => item.canonicalRef),
           },
           content: {
-            message: request.message,
-            history: request.history,
+            message: effectiveMessage,
+            history: context.downstreamHistory,
             evidence,
           },
         },
@@ -226,7 +246,9 @@ export class MeditationsChatService {
       return {
         route: routing.route,
         reason: routing.reason,
-        message: INSUFFICIENT_EVIDENCE_MESSAGE,
+        safetyKind: null,
+        deferredSafetyTopic: null,
+        message: withSafetyResolutionAcknowledgement(INSUFFICIENT_EVIDENCE_MESSAGE, routing),
         citations: [],
         schedulingProposal: null,
       };
@@ -252,11 +274,107 @@ export class MeditationsChatService {
     return {
       route: routing.route,
       reason: routing.reason,
-      message: answer.answer,
+      safetyKind: null,
+      deferredSafetyTopic: null,
+      message: withSafetyResolutionAcknowledgement(answer.answer, routing),
       citations,
       schedulingProposal: null,
     };
   }
+}
+
+interface RoutingContext {
+  readonly recentUserMessages: readonly string[];
+  readonly downstreamHistory: readonly ChatHistoryMessage[];
+  readonly pendingSafety?: {
+    readonly kind: SafetyKind | null;
+    readonly deferredSafetyTopic?: DeferredSafetyTopic;
+  };
+}
+
+function routingContext(history: readonly ChatHistoryMessage[]): RoutingContext {
+  let latestSafetyIndex = -1;
+  for (let index = 0; index < history.length; index += 1) {
+    const item = history[index];
+    if (item.author === 'marcus' && item.route === 'SAFETY') {
+      latestSafetyIndex = index;
+    }
+  }
+  if (latestSafetyIndex < 0) {
+    return contextFromHistory(history);
+  }
+
+  const resolvedBarrier = history.findIndex(
+    (item, index) =>
+      index > latestSafetyIndex &&
+      item.author === 'marcus' &&
+      item.route !== undefined &&
+      item.route !== 'SAFETY',
+  );
+  if (resolvedBarrier >= 0) {
+    return contextFromHistory(history.slice(resolvedBarrier + 1));
+  }
+
+  const safetyMarker = history[latestSafetyIndex];
+  const downstreamHistory = stripRoutingMetadata(history.slice(latestSafetyIndex + 1));
+  const recentUserMessages = history
+    .filter((item) => item.author === 'user')
+    .map((item) => item.content);
+  if (isStickySafetyKind(safetyMarker.safetyKind)) {
+    return {
+      recentUserMessages,
+      downstreamHistory,
+      pendingSafety: {
+        kind: safetyMarker.safetyKind ?? null,
+        ...(safetyMarker.deferredSafetyTopic
+          ? { deferredSafetyTopic: safetyMarker.deferredSafetyTopic }
+          : {}),
+      },
+    };
+  }
+  return contextFromHistory(downstreamHistory);
+}
+
+function contextFromHistory(history: readonly ChatHistoryMessage[]): RoutingContext {
+  return {
+    recentUserMessages: history
+      .filter((item) => item.author === 'user')
+      .map((item) => item.content),
+    downstreamHistory: stripRoutingMetadata(history),
+  };
+}
+
+function stripRoutingMetadata(
+  history: readonly ChatHistoryMessage[],
+): readonly ChatHistoryMessage[] {
+  return history.map(({ author, content }) => ({ author, content }));
+}
+
+function isStickySafetyKind(kind: SafetyKind | undefined): boolean {
+  return (
+    kind === undefined ||
+    kind === 'SELF_HARM_AMBIGUOUS' ||
+    kind === 'SELF_HARM_IMMINENT' ||
+    kind === 'VIOLENCE_AMBIGUOUS' ||
+    kind === 'VIOLENCE_IMMINENT'
+  );
+}
+
+function withSafetyResolutionAcknowledgement(
+  message: string,
+  routing: {
+    readonly effectiveMessage?: string;
+    readonly safetyFollowUpStatus?: string;
+    readonly resumedDeferredSafetyTopic?: DeferredSafetyTopic;
+  },
+): string {
+  if (routing.safetyFollowUpStatus !== 'RESOLVED' || !routing.effectiveMessage) {
+    return message;
+  }
+  const resumed = routing.resumedDeferredSafetyTopic;
+  return resumed
+    ? `Thanks for answering directly. We can continue with ${resumed.label}. ${message}`
+    : `${SAFETY_RESOLVED_PREFIX}${message}`;
 }
 
 function createEvidence(matches: readonly PineconeQueryMatch[]): readonly ChatEvidence[] {

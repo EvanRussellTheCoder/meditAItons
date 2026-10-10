@@ -9,7 +9,8 @@ import {
   MeditationScheduleConfirmation,
   MeditationScheduleProposal,
 } from '../models/chat.models';
-import { CONVERSATION_ROUTES, ROUTING_REASONS } from '../routing/types';
+import { CONVERSATION_ROUTES, ROUTING_REASONS, SAFETY_KINDS } from '../routing/types';
+import { isDeferredSafetyTopic, isIntentSafetyKind, isSafetyKind } from '../routing/policy';
 
 @Injectable({ providedIn: 'root' })
 export class ChatApiClient {
@@ -43,6 +44,8 @@ function validateResponse(value: unknown): ChatApiResponse {
   }
   const route = value['route'];
   const reason = value['reason'];
+  const safetyKind = value['safetyKind'];
+  const deferredSafetyTopic = value['deferredSafetyTopic'];
   const message = value['message'];
   const citationsValue = value['citations'];
   const schedulingProposalValue = value['schedulingProposal'];
@@ -51,10 +54,15 @@ function validateResponse(value: unknown): ChatApiResponse {
     !(CONVERSATION_ROUTES as readonly string[]).includes(route) ||
     typeof reason !== 'string' ||
     !(ROUTING_REASONS as readonly string[]).includes(reason) ||
+    !(
+      safetyKind === null ||
+      (typeof safetyKind === 'string' && (SAFETY_KINDS as readonly string[]).includes(safetyKind))
+    ) ||
     typeof message !== 'string' ||
     !message.trim() ||
     !Array.isArray(citationsValue) ||
-    !(schedulingProposalValue === null || isRecord(schedulingProposalValue))
+    !(schedulingProposalValue === null || isRecord(schedulingProposalValue)) ||
+    !(deferredSafetyTopic === null || isDeferredSafetyTopic(deferredSafetyTopic))
   ) {
     throw invalidResponse();
   }
@@ -64,12 +72,23 @@ function validateResponse(value: unknown): ChatApiResponse {
   if (route !== 'IN_SCOPE' && citations.length > 0) {
     throw invalidResponse();
   }
+  if ((route === 'SAFETY') !== (safetyKind !== null)) {
+    throw invalidResponse();
+  }
+  if (
+    deferredSafetyTopic !== null &&
+    (route !== 'SAFETY' || !isSafetyKind(safetyKind) || !isIntentSafetyKind(safetyKind))
+  ) {
+    throw invalidResponse();
+  }
   if (route !== 'SCHEDULE' && schedulingProposal !== null) {
     throw invalidResponse();
   }
   return {
     route: route as ChatApiResponse['route'],
     reason: reason as ChatApiResponse['reason'],
+    safetyKind: safetyKind as ChatApiResponse['safetyKind'],
+    deferredSafetyTopic: deferredSafetyTopic as ChatApiResponse['deferredSafetyTopic'],
     message: message.trim(),
     citations,
     schedulingProposal,

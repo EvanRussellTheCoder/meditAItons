@@ -72,6 +72,47 @@ describe('ChatStore', () => {
     expect(store.messages().at(-1)?.content).not.toContain('offline');
   });
 
+  it('persists and resends assistant safety routing metadata', async () => {
+    const deferredSafetyTopic = {
+      label: 'your concerns about AI and job security',
+      message: 'Can we talk about my fear of AI replacing me at work?',
+    } as const;
+    api.reply
+      .mockResolvedValueOnce(
+        response({
+          route: 'SAFETY',
+          reason: 'VIOLENCE_CONCERN',
+          safetyKind: 'VIOLENCE_AMBIGUOUS',
+          deferredSafetyTopic,
+          message: 'Are you planning to hurt someone right now?',
+        }),
+      )
+      .mockResolvedValueOnce(response({ message: 'Please answer directly.' }));
+
+    store.send('I might hurt someone.');
+    await vi.waitFor(() => expect(store.isResponding()).toBe(false));
+    expect(store.messages().at(-1)).toMatchObject({
+      route: 'SAFETY',
+      safetyKind: 'VIOLENCE_AMBIGUOUS',
+      deferredSafetyTopic,
+    });
+
+    store.send("I'm okay now.");
+    await vi.waitFor(() => expect(store.isResponding()).toBe(false));
+    expect(api.reply).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        history: expect.arrayContaining([
+          expect.objectContaining({
+            author: 'marcus',
+            route: 'SAFETY',
+            safetyKind: 'VIOLENCE_AMBIGUOUS',
+            deferredSafetyTopic,
+          }),
+        ]),
+      }),
+    );
+  });
+
   it('ignores a late response after the conversation is reset', async () => {
     let resolveReply!: (value: ChatApiResponse) => void;
     api.reply.mockReturnValue(
@@ -153,6 +194,8 @@ function response(overrides: Partial<ChatApiResponse> = {}): ChatApiResponse {
   return {
     route: 'IN_SCOPE',
     reason: 'PERSONAL_REFLECTION',
+    safetyKind: null,
+    deferredSafetyTopic: null,
     message: 'A grounded response.',
     citations: [],
     schedulingProposal: null,

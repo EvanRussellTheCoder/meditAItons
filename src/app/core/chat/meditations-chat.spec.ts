@@ -20,6 +20,8 @@ describe('MeditationsChatService', () => {
     await expect(service.respond(request('Write Python code.'))).resolves.toEqual({
       route: 'OUT_OF_SCOPE',
       reason: 'EXTERNAL_TASK',
+      safetyKind: null,
+      deferredSafetyTopic: null,
       message: 'That request is outside this conversation.',
       citations: [],
       schedulingProposal: null,
@@ -36,6 +38,8 @@ describe('MeditationsChatService', () => {
     await expect(service.respond(request("I'm anxious about tomorrow."))).resolves.toEqual({
       route: 'IN_SCOPE',
       reason: 'PERSONAL_REFLECTION',
+      safetyKind: null,
+      deferredSafetyTopic: null,
       message: 'Attend to what is present. Meditations 8.36',
       citations: [
         {
@@ -100,6 +104,231 @@ describe('MeditationsChatService', () => {
     expect(dependencies.embeddings.createEmbeddings).not.toHaveBeenCalled();
     expect(dependencies.pinecone.queryByVector).not.toHaveBeenCalled();
     expect(dependencies.answers.generate).not.toHaveBeenCalled();
+  });
+
+  it('restores an unresolved violence concern from assistant routing metadata', async () => {
+    const dependencies = fakeDependencies();
+    const deferredSafetyTopic = {
+      label: 'your concerns about AI and job security',
+      message: 'Can we talk about my fear of AI replacing me at work?',
+    } as const;
+    dependencies.router.route.mockResolvedValue(
+      routingDecision({
+        route: 'SAFETY',
+        reason: 'SAFETY_FOLLOW_UP_REQUIRED',
+        retrieve: false,
+        safetyKind: 'VIOLENCE_AMBIGUOUS',
+        safetyFollowUpStatus: 'FOLLOW_UP_REQUIRED',
+        deferredSafetyTopic,
+        userMessage: 'Are you thinking about hurting anyone right now?',
+      }),
+    );
+    const service = new MeditationsChatService(dependencies);
+
+    await expect(
+      service.respond({
+        message: "I'm okay now.",
+        history: [
+          { author: 'user', content: 'I might hurt my neighbor.' },
+          {
+            author: 'marcus',
+            content: 'Are you planning to hurt someone right now?',
+            route: 'SAFETY',
+            safetyKind: 'VIOLENCE_AMBIGUOUS',
+            deferredSafetyTopic,
+          },
+        ],
+        timezone: 'America/New_York',
+      }),
+    ).resolves.toMatchObject({
+      route: 'SAFETY',
+      safetyKind: 'VIOLENCE_AMBIGUOUS',
+      deferredSafetyTopic,
+    });
+    expect(dependencies.router.route).toHaveBeenCalledWith({
+      message: "I'm okay now.",
+      recentUserMessages: ['I might hurt my neighbor.'],
+      pendingSafety: { kind: 'VIOLENCE_AMBIGUOUS', deferredSafetyTopic },
+    });
+    expect(dependencies.embeddings.createEmbeddings).not.toHaveBeenCalled();
+  });
+
+  it('conservatively reassesses a legacy safety response without a stored kind', async () => {
+    const dependencies = fakeDependencies();
+    dependencies.router.route.mockResolvedValue(
+      routingDecision({
+        route: 'SAFETY',
+        reason: 'SAFETY_FOLLOW_UP_REQUIRED',
+        retrieve: false,
+        safetyKind: 'OTHER',
+      }),
+    );
+
+    await new MeditationsChatService(dependencies).respond({
+      message: "I'm okay now.",
+      history: [
+        { author: 'user', content: 'I might hurt someone.' },
+        {
+          author: 'marcus',
+          content: 'Are you planning to hurt someone right now?',
+          route: 'SAFETY',
+        },
+      ],
+      timezone: 'America/New_York',
+    });
+
+    expect(dependencies.router.route).toHaveBeenCalledWith(
+      expect.objectContaining({ pendingSafety: { kind: null } }),
+    );
+  });
+
+  it('uses only a resolved continuation downstream and acknowledges the transition', async () => {
+    const dependencies = fakeDependencies();
+    dependencies.router.route.mockResolvedValue(
+      routingDecision({
+        effectiveMessage: 'Help me reflect on my anger.',
+        safetyFollowUpStatus: 'RESOLVED',
+      }),
+    );
+    const service = new MeditationsChatService(dependencies);
+
+    const response = await service.respond({
+      message: "I'm not going to hurt anyone. Help me reflect on my anger.",
+      history: [
+        { author: 'user', content: 'I might hurt my neighbor.' },
+        {
+          author: 'marcus',
+          content: 'Are you planning to hurt someone right now?',
+          route: 'SAFETY',
+          safetyKind: 'VIOLENCE_AMBIGUOUS',
+        },
+      ],
+      timezone: 'America/New_York',
+    });
+
+    expect(response).toMatchObject({
+      route: 'IN_SCOPE',
+      safetyKind: null,
+      message: expect.stringMatching(/^Thanks for answering directly\. We can continue\./u),
+    });
+    expect(dependencies.embeddings.createEmbeddings).toHaveBeenCalledWith([
+      'Help me reflect on my anger.',
+    ]);
+    expect(dependencies.answers.generate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: 'Help me reflect on my anger.',
+        history: [],
+      }),
+    );
+  });
+
+  it('uses only a resumed deferred message downstream and names its topic', async () => {
+    const dependencies = fakeDependencies();
+    const deferredSafetyTopic = {
+      label: 'your concerns about AI and job security',
+      message: 'Can we talk about my fear of AI replacing me at work?',
+    } as const;
+    dependencies.router.route.mockResolvedValue(
+      routingDecision({
+        effectiveMessage: deferredSafetyTopic.message,
+        safetyFollowUpStatus: 'RESOLVED',
+        resumedDeferredSafetyTopic: deferredSafetyTopic,
+      }),
+    );
+    const service = new MeditationsChatService(dependencies);
+
+    const response = await service.respond({
+      message:
+        "I'm not going to hurt anyone, the plan is off, I put the object down, and I left the area.",
+      history: [
+        { author: 'user', content: deferredSafetyTopic.message },
+        {
+          author: 'marcus',
+          content: 'Before we discuss that, I need to make sure everyone is safe.',
+          route: 'SAFETY',
+          safetyKind: 'VIOLENCE_IMMINENT',
+          deferredSafetyTopic,
+        },
+      ],
+      timezone: 'America/New_York',
+    });
+
+    expect(response).toMatchObject({
+      route: 'IN_SCOPE',
+      deferredSafetyTopic: null,
+      message: expect.stringMatching(
+        /^Thanks for answering directly\. We can continue with your concerns about AI and job security\./u,
+      ),
+    });
+    expect(dependencies.embeddings.createEmbeddings).toHaveBeenCalledWith([
+      deferredSafetyTopic.message,
+    ]);
+    expect(dependencies.answers.generate).toHaveBeenCalledWith(
+      expect.objectContaining({ message: deferredSafetyTopic.message, history: [] }),
+    );
+  });
+
+  it.each([
+    ['ABUSE', 'My abusive partner threatens me.'],
+    ['EATING_DISORDER', "I don't deserve food."],
+    ['REALITY_DISTRESS', 'The voices are speaking into my thoughts.'],
+    ['OTHER', 'This is another urgent crisis.'],
+  ] as const)('does not keep %s safety sticky', async (safetyKind, priorMessage) => {
+    const dependencies = fakeDependencies();
+    const service = new MeditationsChatService(dependencies);
+
+    await service.respond({
+      message: 'What did Marcus say about courage?',
+      history: [
+        { author: 'user', content: priorMessage },
+        {
+          author: 'marcus',
+          content: 'Please seek appropriate human support.',
+          route: 'SAFETY',
+          safetyKind,
+        },
+      ],
+      timezone: 'America/New_York',
+    });
+
+    expect(dependencies.router.route).toHaveBeenCalledWith({
+      message: 'What did Marcus say about courage?',
+      recentUserMessages: [],
+    });
+  });
+
+  it('drops a completed safety segment but retains later conversation context', async () => {
+    const dependencies = fakeDependencies();
+    await new MeditationsChatService(dependencies).respond({
+      message: 'What did he say about self-control?',
+      history: [
+        { author: 'user', content: 'I might hurt my neighbor.' },
+        {
+          author: 'marcus',
+          content: 'Are you planning to hurt someone right now?',
+          route: 'SAFETY',
+          safetyKind: 'VIOLENCE_AMBIGUOUS',
+        },
+        { author: 'user', content: 'I am not thinking about hurting anyone now.' },
+        {
+          author: 'marcus',
+          content: 'Thanks for answering directly.',
+          route: 'NEEDS_CLARIFICATION',
+        },
+        { author: 'user', content: 'I want to reflect on anger.' },
+        {
+          author: 'marcus',
+          content: 'Let us examine that judgment.',
+          route: 'IN_SCOPE',
+        },
+      ],
+      timezone: 'America/New_York',
+    });
+
+    expect(dependencies.router.route).toHaveBeenCalledWith({
+      message: 'What did he say about self-control?',
+      recentUserMessages: ['I want to reflect on anger.'],
+    });
   });
 
   it('uses a fixed abstention when retrieved evidence is insufficient', async () => {

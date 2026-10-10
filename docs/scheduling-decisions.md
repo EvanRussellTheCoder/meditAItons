@@ -105,6 +105,13 @@ It complements the routing and localhost-chat decision logs.
     confirmation card states the future-only boundary. Availability and any other booking limits
     remain controlled by the configured Cal.com event type.
 
+22. **A deferred scheduling request still crosses every normal boundary.** If a user asks to
+    schedule while a self-harm or violence check is unresolved, the exact request may be saved but
+    no scheduling extraction occurs. After the check is explicitly resolved, the stored text is
+    rechecked by deterministic rules and moderation, classified again, and only then passed to the
+    scheduling extractor. It still produces an editable proposal rather than a booking, and Cal.com
+    still receives no write until the user confirms the card.
+
 ## Alternatives considered
 
 - **Direct booking from the first chat message:** faster, but dates can be misread and it lacks

@@ -16,6 +16,7 @@ For a presenter-ready walkthrough of chunking, metadata, RAG routing, and Cal.co
 - Accessible labels, focus states, reduced-motion support, keyboard composer controls, and semantic landmarks
 - Local persistence for conversation and display preferences
 - Local routing, Pinecone retrieval, and OpenAI-grounded responses through a loopback-only API
+- Stateful self-harm and violence follow-up without permanently locking the conversation in safety
 - Conversation-aware meditation scheduling through an explicit Cal.com confirmation card
 - Vitest unit coverage for the application shell, chat boundary, chat state, and message composer
 - Pure TypeScript parent/child chunking for canonical Meditations sections
@@ -40,6 +41,37 @@ editable confirmation card. Cal.com receives a booking request only after the us
 name and email and presses **Confirm meditation time**. `CAL_API_KEY` and `CAL_EVENT_TYPE_ID` are
 required for the local API; all settings are listed in [`.env.example`](.env.example).
 `DATABASE_URL` is not used by this flow.
+
+### Safety follow-up and topic resumption
+
+Self-harm and violence concerns remain pending until the user directly answers the relevant
+present-tense safety questions. A topic change does not bypass that check, but the app can remember
+and acknowledge the postponed request without sending it to retrieval or generation:
+
+```text
+User:      I have a knife and I'm going to attack them.
+Marcus:    [fixed imminent-violence response]
+
+User:      I want to talk about my fear that AI will replace me at work.
+Marcus:    Before we talk about your concerns about AI and job security,
+           I need to make sure everyone is safe. [fixed safety question]
+
+User:      I'm not going to hurt anyone, the plan is off, I put the knife down,
+           and I left the area.
+Marcus:    Thanks for answering directly. We can continue with your concerns
+           about AI and job security. [grounded response to the postponed topic]
+```
+
+The acknowledgement label is model-selected but strictly validated; every safety instruction and
+question remains fixed application text. The postponed request must be an exact substring of the
+user's message. After resolution, that exact text is checked again by deterministic rules and
+moderation before it can reach normal classification, scheduling, embedding, Pinecone, or answer
+generation. A newer request in the resolution message takes precedence over the saved topic.
+
+This is a conversation-routing policy, not a clinical determination that a person is safe. Fresh
+danger language always starts or continues the `SAFETY` route. Abuse, eating-disorder distress,
+reality distress, and generic safety concerns remain serious on the triggering turn but are not
+sticky unless the next message independently raises a safety concern.
 
 ## Quality checks
 
@@ -150,7 +182,7 @@ or Pinecone. The command prints the route and whether retrieval was allowed; all
 the same OpenAI model and 1536 dimensions as the indexed children and print the matching canonical
 reference, similarity score, child text, parent context, and source URL.
 
-Run the 27-case routing regression suite without querying Pinecone:
+Run the 36-case single-turn and multi-turn routing regression suite without querying Pinecone:
 
 ```bash
 npm run routing:test
@@ -159,7 +191,9 @@ npm run routing:test
 The routing suite covers ambiguous and explicit self-harm, violence, abuse, medication advice,
 eating-disorder language, reality distress, prompt injection, unrelated requests, reframing,
 empty/nonsense/long inputs, slang, multilingual input, corpus questions whose answer may not
-exist, and the distinction between scheduling and asking about meditation frequency. Query design choices are recorded in
+exist, the distinction between scheduling and asking about meditation frequency, and multi-turn
+safety reassurance, contradiction, personalized topic deferral, automatic resumption, resolution,
+and exact continuation extraction. Query design choices are recorded in
 [`docs/pinecone-query-decisions.md`](docs/pinecone-query-decisions.md); routing and safety decisions
 are recorded in
 [`docs/conversation-routing-decisions.md`](docs/conversation-routing-decisions.md).
@@ -210,14 +244,19 @@ Each LangSmith root includes the same request ID shown in the terminal and retur
 The six router outcomes have been exercised end to end with tracing enabled. Expected trace shapes
 are:
 
-| Route | Child spans |
-| --- | --- |
-| `IN_SCOPE` | `selector`, `embedding`, `pinecone`, `grounded_answer` |
-| `SCHEDULE` | `selector`, `scheduling` |
-| `REFRAME` | `selector` |
-| `OUT_OF_SCOPE` | `selector` |
-| `NEEDS_CLARIFICATION` | `selector` |
-| `SAFETY` | `selector` |
+| Route                 | Child spans                                            |
+| --------------------- | ------------------------------------------------------ |
+| `IN_SCOPE`            | `selector`, `embedding`, `pinecone`, `grounded_answer` |
+| `SCHEDULE`            | `selector`, `scheduling`                               |
+| `REFRAME`             | `selector`                                             |
+| `OUT_OF_SCOPE`        | `selector`                                             |
+| `NEEDS_CLARIFICATION` | `selector`                                             |
+| `SAFETY`              | `selector`                                             |
+
+For a deferred-topic safety exchange, both the initial danger response and the personalized
+follow-up remain `selector`-only. After a complete resolution, the trace records the effective
+deferred-message length and `resumedDeferredSafetyTopic: true`; downstream spans appear only if the
+freshly rechecked topic's normal route requires them.
 
 A confirmed scheduling submission is a separate `meditaitons.schedule_confirmation` root with a
 `cal.com` child. Provider rejection is recorded as an error on both spans without uploading the raw

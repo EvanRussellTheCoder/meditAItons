@@ -29,10 +29,15 @@ import {
 } from '../src/app/core/pinecone';
 import {
   ConversationRouter,
+  CONVERSATION_ROUTES,
   DEFAULT_OPENAI_MODERATION_MODEL,
   DEFAULT_OPENAI_ROUTER_MODEL,
   OpenAIModerationClient,
   OpenAIScopeClassifier,
+  SAFETY_KINDS,
+  isDeferredSafetyTopic,
+  isIntentSafetyKind,
+  isSafetyKind,
 } from '../src/app/core/routing';
 import {
   CalComClient,
@@ -73,6 +78,11 @@ async function main(): Promise<void> {
     extraction: new OpenAISchedulingExtractor({ apiKey, baseUrl, model: routerModel }),
     calendar,
   });
+  const routingClassifier = new OpenAIScopeClassifier({
+    apiKey,
+    baseUrl,
+    model: routerModel,
+  });
   const service = new MeditationsChatService({
     router: new ConversationRouter({
       moderation: new OpenAIModerationClient({
@@ -80,11 +90,8 @@ async function main(): Promise<void> {
         baseUrl,
         model: moderationModel,
       }),
-      classifier: new OpenAIScopeClassifier({
-        apiKey,
-        baseUrl,
-        model: routerModel,
-      }),
+      classifier: routingClassifier,
+      safetyFollowUp: routingClassifier,
     }),
     embeddings: new OpenAIEmbeddingClient({
       apiKey,
@@ -186,6 +193,12 @@ async function main(): Promise<void> {
                   safe: {
                     route: result.route,
                     reason: result.reason,
+                    safetyKind: result.safetyKind,
+                    deferredSafetyTopicPresent: result.deferredSafetyTopic !== null,
+                    deferredSafetyTopicLabelCharacters:
+                      result.deferredSafetyTopic?.label.length ?? null,
+                    deferredSafetyMessageCharacters:
+                      result.deferredSafetyTopic?.message.length ?? null,
                     citationCount: result.citations.length,
                     citationReferences: result.citations.map((item) => item.canonicalRef),
                     schedulingProposalPresent: result.schedulingProposal !== null,
@@ -406,6 +419,9 @@ function validateHistoryMessage(value: unknown): ChatHistoryMessage {
   const record = value as Record<string, unknown>;
   const author = record['author'];
   const content = record['content'];
+  const route = record['route'];
+  const safetyKind = record['safetyKind'];
+  const deferredSafetyTopic = record['deferredSafetyTopic'];
   if (
     (author !== 'user' && author !== 'marcus') ||
     typeof content !== 'string' ||
@@ -414,7 +430,34 @@ function validateHistoryMessage(value: unknown): ChatHistoryMessage {
   ) {
     throw new ClientRequestError(400, 'History contains an invalid message.');
   }
-  return { author, content: content.trim() };
+  if (
+    (route !== undefined &&
+      (author !== 'marcus' ||
+        typeof route !== 'string' ||
+        !(CONVERSATION_ROUTES as readonly string[]).includes(route))) ||
+    (safetyKind !== undefined &&
+      (author !== 'marcus' ||
+        route !== 'SAFETY' ||
+        typeof safetyKind !== 'string' ||
+        !(SAFETY_KINDS as readonly string[]).includes(safetyKind))) ||
+    (deferredSafetyTopic !== undefined &&
+      (author !== 'marcus' ||
+        route !== 'SAFETY' ||
+        !isSafetyKind(safetyKind) ||
+        !isIntentSafetyKind(safetyKind) ||
+        !isDeferredSafetyTopic(deferredSafetyTopic)))
+  ) {
+    throw new ClientRequestError(400, 'History contains invalid routing metadata.');
+  }
+  return {
+    author,
+    content: content.trim(),
+    ...(typeof route === 'string' ? { route: route as ChatHistoryMessage['route'] } : {}),
+    ...(typeof safetyKind === 'string'
+      ? { safetyKind: safetyKind as ChatHistoryMessage['safetyKind'] }
+      : {}),
+    ...(isDeferredSafetyTopic(deferredSafetyTopic) ? { deferredSafetyTopic } : {}),
+  };
 }
 
 function readJsonBody(request: IncomingMessage): Promise<unknown> {

@@ -114,6 +114,19 @@ observability: compact pipeline events for machines and readable decision summar
     logging, routing, scheduling, retrieval, and grounded answers without requiring LangSmith
     network access.
 
+22. **Safety lifecycle telemetry records transitions, not postponed content.** Normal `[routing]`
+    output and content-disabled selector spans include `safetyKind`, `safetyFollowUpStatus`,
+    deferred-topic presence, label/message lengths, effective-message length, and whether a stored
+    topic resumed. They do not add the label or deferred text to the structural projection. Full
+    synthetic content remains governed by `MEDITATIONS_LANGSMITH_CAPTURE_CONTENT=true`.
+
+23. **Deferred-topic resumption has a verified multi-turn trace shape.** A synthetic live run on
+    2026-10-10 produced three successful roots: imminent violence with only `selector`, a
+    personalized `FOLLOW_UP_REQUIRED` response with only `selector`, and a resolved `IN_SCOPE`
+    response with `selector`, `embedding`, `pinecone`, and `grounded_answer`. The middle selector
+    recorded a deferred message length of 85; the final selector recorded the same effective length
+    and `resumedDeferredSafetyTopic: true`. No span reported an error.
+
 ## Reading the output
 
 For a scheduling prompt, the normal order is:
@@ -148,14 +161,26 @@ only the child stages that ran; blocked routes therefore have no embedding or re
 For route-complete smoke testing, use a unique `X-Request-Id` for each synthetic request and search
 for that value in LangSmith metadata. The expected matrix is:
 
-| Route | Root status | Expected children | Forbidden children |
-| --- | --- | --- | --- |
-| `IN_SCOPE` | success | `selector`, `embedding`, `pinecone`, `grounded_answer` | `scheduling`, `cal.com` |
-| `SCHEDULE` | success | `selector`, `scheduling` | `embedding`, `pinecone`, `grounded_answer`, `cal.com` |
-| `REFRAME` | success | `selector` | all action and retrieval spans |
-| `OUT_OF_SCOPE` | success | `selector` | all action and retrieval spans |
-| `NEEDS_CLARIFICATION` | success | `selector` | all action and retrieval spans |
-| `SAFETY` | success | `selector` | all action and retrieval spans |
+| Route                 | Root status | Expected children                                      | Forbidden children                                    |
+| --------------------- | ----------- | ------------------------------------------------------ | ----------------------------------------------------- |
+| `IN_SCOPE`            | success     | `selector`, `embedding`, `pinecone`, `grounded_answer` | `scheduling`, `cal.com`                               |
+| `SCHEDULE`            | success     | `selector`, `scheduling`                               | `embedding`, `pinecone`, `grounded_answer`, `cal.com` |
+| `REFRAME`             | success     | `selector`                                             | all action and retrieval spans                        |
+| `OUT_OF_SCOPE`        | success     | `selector`                                             | all action and retrieval spans                        |
+| `NEEDS_CLARIFICATION` | success     | `selector`                                             | all action and retrieval spans                        |
+| `SAFETY`              | success     | `selector`                                             | all action and retrieval spans                        |
 
 The confirmation POST is checked separately because it is the only request allowed to create a
 `cal.com` span or perform a calendar write.
+
+For a postponed-topic safety flow, the expected sequence is:
+
+| Turn                                        | Root route                                                | Selector state                               | Expected children                      |
+| ------------------------------------------- | --------------------------------------------------------- | -------------------------------------------- | -------------------------------------- |
+| Initial danger                              | `SAFETY`                                                  | Intent safety kind, no deferred topic        | `selector`                             |
+| Topic change without a direct safety answer | `SAFETY`                                                  | `FOLLOW_UP_REQUIRED`, deferred topic present | `selector`                             |
+| Complete safety answer                      | Normal route selected from the effective deferred message | `RESOLVED`, resumed topic, effective length  | Normal children for the selected route |
+
+If the resumed text becomes `IN_SCOPE`, its normal children are `embedding`, `pinecone`, and
+`grounded_answer`. If fresh deterministic or moderation checks find danger, the turn returns to
+`SAFETY` and those children remain forbidden.

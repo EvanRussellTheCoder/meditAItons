@@ -1,6 +1,7 @@
 import {
   ClassifierReason,
   ConversationRoute,
+  DeferredSafetyTopic,
   RouteRequest,
   RoutingDecision,
   RoutingReason,
@@ -12,6 +13,8 @@ import {
 
 export const MAX_ROUTING_INPUT_CHARACTERS = 4_000;
 export const MAX_ROUTING_HISTORY_MESSAGES = 6;
+export const MAX_DEFERRED_SAFETY_TOPIC_LABEL_CHARACTERS = 100;
+export const MAX_DEFERRED_SAFETY_MESSAGE_CHARACTERS = 600;
 
 const IMMINENT_SELF_HARM = [
   /\b(?:i(?:'m| am)? going to|i(?:'ll| will)|i plan to) (?:kill|hurt) myself\b/u,
@@ -157,6 +160,51 @@ export function createSafetyDecision(
   };
 }
 
+export function createSafetyFollowUpDecision(
+  safetyKind: SafetyKind,
+  deferredSafetyTopic?: DeferredSafetyTopic,
+): RoutingDecision {
+  return {
+    route: 'SAFETY',
+    reason: 'SAFETY_FOLLOW_UP_REQUIRED',
+    retrieve: false,
+    source: 'classifier',
+    safetyKind,
+    safetyFollowUpStatus: 'FOLLOW_UP_REQUIRED',
+    userMessage: safetyFollowUpMessage(safetyKind, deferredSafetyTopic),
+    ...(deferredSafetyTopic ? { deferredSafetyTopic } : {}),
+  };
+}
+
+export function createSafetyReassessmentUnavailableDecision(
+  safetyKind: SafetyKind | null,
+  deferredSafetyTopic?: DeferredSafetyTopic,
+): RoutingDecision {
+  return {
+    route: 'SAFETY',
+    reason: 'SAFETY_REASSESSMENT_UNAVAILABLE',
+    retrieve: false,
+    source: 'fallback',
+    safetyKind: safetyKind ?? 'OTHER',
+    ...(deferredSafetyTopic ? { deferredSafetyTopic } : {}),
+    userMessage:
+      "I couldn't safely reassess the earlier concern, so I don't want to assume it has passed. " +
+      'If anyone may be in immediate danger, call local emergency services. Otherwise, please answer the safety question directly or try again in a moment.',
+  };
+}
+
+export function createSafetyResolvedDecision(): RoutingDecision {
+  return {
+    route: 'NEEDS_CLARIFICATION',
+    reason: 'SAFETY_RESOLVED',
+    retrieve: false,
+    source: 'classifier',
+    safetyFollowUpStatus: 'RESOLVED',
+    userMessage:
+      'Thanks for answering directly. We can continue—what would you like to reflect on?',
+  };
+}
+
 export function createDecision(
   route: Exclude<ConversationRoute, 'SAFETY'>,
   reason: RoutingReason,
@@ -176,6 +224,39 @@ export function createDecision(
 
 export function isSafetyKind(value: unknown): value is SafetyKind {
   return typeof value === 'string' && (SAFETY_KINDS as readonly string[]).includes(value);
+}
+
+export function isIntentSafetyKind(kind: SafetyKind): boolean {
+  return (
+    kind === 'SELF_HARM_AMBIGUOUS' ||
+    kind === 'SELF_HARM_IMMINENT' ||
+    kind === 'VIOLENCE_AMBIGUOUS' ||
+    kind === 'VIOLENCE_IMMINENT'
+  );
+}
+
+export function isDeferredSafetyTopic(value: unknown): value is DeferredSafetyTopic {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  const label = record['label'];
+  const message = record['message'];
+  return (
+    typeof label === 'string' &&
+    label === label.replace(/\s+/gu, ' ').trim() &&
+    label.length > 0 &&
+    label.length <= MAX_DEFERRED_SAFETY_TOPIC_LABEL_CHARACTERS &&
+    /^your\s/iu.test(label) &&
+    !/[\u0000-\u001F\u007F]/u.test(label) &&
+    !/[?!]$/u.test(label) &&
+    !/[<>{}\[\]`]/u.test(label) &&
+    typeof message === 'string' &&
+    message === message.trim() &&
+    message.length > 0 &&
+    message.length <= MAX_DEFERRED_SAFETY_MESSAGE_CHARACTERS &&
+    !/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/u.test(message)
+  );
 }
 
 function normalizeForMatching(message: string): string {
@@ -341,6 +422,47 @@ function safetyMessage(kind: SafetyKind): string {
         'This may need immediate human support rather than a passage from Meditations. If you or ' +
         'someone else is in danger, call local emergency services; otherwise, contact a trusted ' +
         'person or qualified professional now.'
+      );
+  }
+}
+
+function safetyFollowUpMessage(
+  kind: SafetyKind,
+  deferredSafetyTopic?: DeferredSafetyTopic,
+): string {
+  const acknowledgement = deferredSafetyTopic
+    ? kind.startsWith('SELF_HARM')
+      ? `Before we talk about ${deferredSafetyTopic.label}, I need to make sure you're safe. `
+      : `Before we talk about ${deferredSafetyTopic.label}, I need to make sure everyone is safe. `
+    : 'Thanks for responding. ';
+  switch (kind) {
+    case 'SELF_HARM_AMBIGUOUS':
+      return (
+        `${acknowledgement}To make sure I understand: are you thinking about suicide or ` +
+        'harming yourself right now? Please answer that directly before we continue.'
+      );
+    case 'SELF_HARM_IMMINENT':
+      return (
+        `${acknowledgement}Before we continue: are you thinking about killing or harming ` +
+        'yourself right now, is any plan or action still underway, and do you still have access ' +
+        'to what you might use? If you may act now, call local emergency services now; in the U.S., call or text 988.'
+      );
+    case 'VIOLENCE_AMBIGUOUS':
+      return (
+        `${acknowledgement}To make sure I understand: are you thinking about hurting anyone ` +
+        'right now? Please answer that directly before we continue.'
+      );
+    case 'VIOLENCE_IMMINENT':
+      return (
+        `${acknowledgement}Before we continue: are you planning to hurt anyone right now, ` +
+        'is any action still underway, and are you still near the person or able to access the ' +
+        'object or weapon? If anyone may be in immediate danger, call local emergency services.'
+      );
+    default:
+      return (
+        `${acknowledgement}I need to check the earlier concern directly before we continue: ` +
+        'are you thinking about hurting yourself or anyone else right now, is any plan or action ' +
+        'underway, and do you have access to anything you might use?'
       );
   }
 }

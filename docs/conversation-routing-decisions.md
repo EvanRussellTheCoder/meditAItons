@@ -4,6 +4,28 @@ This log records every material policy and engineering decision made for the six
 router is used by both the terminal query command and the loopback-only API behind the Angular
 Journal chatbot. Keys remain server-side.
 
+## Safety follow-up lifecycle at a glance
+
+Only self-harm and violence use the sticky follow-up lifecycle. The most recent assistant
+`SAFETY` entry carries the pending `safetyKind` and, when present, one validated
+`deferredSafetyTopic`. The next user message is assessed as:
+
+| Status               | Meaning                                                                                                                         | Application behavior                                                                                               |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `ACTIVE`             | Current intent, an underway action or plan, continuing access/proximity, inability to remain safe, or contradictory reassurance | Return the existing fixed crisis response; retain but do not mention a saved topic.                                |
+| `FOLLOW_UP_REQUIRED` | The answer is vague, incomplete, or changes the subject                                                                         | Optionally acknowledge a validated topic label, then ask the unchanged fixed safety question.                      |
+| `RESOLVED`           | The required present-tense denial and, for imminent cases, action/access/proximity conditions are explicit                      | Route a new exact continuation, otherwise recheck and resume the stored topic, otherwise ask what to discuss next. |
+
+Resolution and resumption are separate decisions. `RESOLVED` closes the pending check; it does not
+pre-authorize the postponed text. Stored text must pass current deterministic and moderation checks
+and normal classification before any downstream capability runs.
+
+The structured assessment returns five required fields: `status`, `safety_kind`,
+`continuation_message`, `deferred_topic_label`, and `deferred_message`. The two deferred fields are
+permitted only for `FOLLOW_UP_REQUIRED` and must appear together. Invalid optional personalization
+is discarded without weakening a valid safety status; invalid status, safety kind, or continuation
+fails closed.
+
 1. **Exactly six routes are public.** `IN_SCOPE`, `SCHEDULE`, `REFRAME`, `OUT_OF_SCOPE`,
    `NEEDS_CLARIFICATION`, and `SAFETY` make the downstream action auditable. A boolean “allowed”
    would collapse materially different user experiences and make safety behavior harder to test.
@@ -17,10 +39,11 @@ Journal chatbot. Keys remain server-side.
    blocked text from leaving through the retrieval path and avoids spending Pinecone or embedding
    resources on prompts that should not be answered from the corpus.
 
-4. **Safety has absolute priority.** The evaluation order is deterministic high-risk rules,
-   OpenAI moderation, then semantic scope classification. A safety match returns immediately and
-   never calls later stages. An in-scope philosophical theme therefore cannot override concurrent
-   self-harm or violence language.
+4. **Current or unresolved safety has absolute priority.** The evaluation order is deterministic
+   high-risk rules, OpenAI moderation, an explicit pending-safety reassessment when needed, then
+   semantic scope classification. An in-scope philosophical theme cannot override concurrent or
+   unresolved self-harm or violence language, but resolved historical language does not permanently
+   dominate later turns.
 
 5. **High-signal crisis phrases have a deterministic first pass.** Explicit and ambiguous
    self-harm, violence, abuse, dangerous eating behavior, and reality-distress examples are
@@ -82,9 +105,10 @@ Journal chatbot. Keys remain server-side.
     <https://developers.openai.com/api/docs/guides/prompt-guidance-gpt-5p6>.
 
 15. **OpenAI requests are stateless.** `store: false` is set on the Responses API request. Up to six
-    recent user messages can be supplied for conversation-aware routing, but assistant messages are
-    excluded so generated text cannot redefine the policy. The terminal command has one user turn;
-    the localhost chatbot supplies bounded recent user history.
+    recent user messages can be supplied for conversation-aware routing. Assistant text is excluded
+    so generated prose cannot redefine the policy; validated assistant route and safety-kind metadata
+    may establish whether a safety follow-up is pending. The terminal command has one user turn; the
+    localhost chatbot supplies bounded recent history.
 
 16. **Routing failures fail closed.** If moderation fails, the result is
     `NEEDS_CLARIFICATION/SAFETY_CHECK_UNAVAILABLE`; if semantic classification fails, it is
@@ -128,9 +152,9 @@ Journal chatbot. Keys remain server-side.
 
 24. **Tests are split between deterministic unit tests and a live semantic evaluation.** Unit
     tests lock safety priority, no-retrieval invariants, fail-closed behavior, API wire shapes, and
-    structured-output validation without cost or nondeterminism. `npm run routing:test` runs all 27
-    agreed examples against the configured live moderation and classifier models and exits nonzero
-    on any route mismatch.
+    structured-output validation without cost or nondeterminism. `npm run routing:test` runs 27
+    single-turn and nine multi-turn safety cases against the configured live moderation and
+    classifier models and exits nonzero on any route mismatch.
 
 25. **The router is server-only.** It lives in a reusable TypeScript core module and is used by the
     Node query scripts and localhost chat API. `OPENAI_API_KEY` and Pinecone credentials are never
@@ -149,3 +173,56 @@ Journal chatbot. Keys remain server-side.
 28. **Recent user turns can establish scheduling intent.** The classifier receives bounded recent
     user messages, so “Tuesday at 7” is schedulable after “Please schedule time for meditation.”
     Safety still outranks scheduling, and assistant text cannot establish action intent.
+
+29. **Intent safety has an explicit resolution lifecycle.** Self-harm and violence concerns remain
+    pending while the latest routed assistant response is `SAFETY`; a legacy response without kind
+    metadata receives one conservative generic reassessment. A structured reassessment returns
+    `ACTIVE`, `FOLLOW_UP_REQUIRED`, or `RESOLVED`. Abuse, eating-disorder, reality-distress, and
+    other safety responses remain serious but do not automatically make the following safe topic a
+    safety follow-up.
+
+30. **Vague reassurance does not clear a concern.** Ambiguous danger requires an explicit denial of
+    current intent. Imminent danger additionally requires the user to say that the plan or action is
+    not underway and that relevant access or proximity has ended. Contradictory language remains
+    active, and reassessment failures remain on `SAFETY` without retrieval.
+
+31. **Moderation is a signal during follow-up, not an automatic lock.** Negated phrases such as “I
+    am not going to hurt anyone” can contain words that trigger deterministic or moderation rules.
+    During a pending exchange, explicit negations are interpreted by the dedicated reassessment while
+    fresh unnegated deterministic threats still return immediately.
+
+32. **Same-turn continuation is exact and bounded.** A resolved reassessment may select a new safe
+    request only by copying an exact contiguous substring of the current message. That substring,
+    rather than the safety denial, is classified and sent to scheduling, embedding, retrieval, or
+    answer generation. Invalid extraction fails closed.
+
+33. **Browser history carries validated routing metadata.** Assistant history entries may include
+    `route` and `safetyKind`; user entries may not. The API response always includes nullable
+    `safetyKind`, existing stored conversations without it receive one conservative generic
+    reassessment, and completed safety segments are excluded from later classifier context.
+
+34. **A postponed topic can be acknowledged without weakening the safety check.** Only a
+    `FOLLOW_UP_REQUIRED` reassessment may return a neutral, validated label beginning with “your”
+    and an exact substring copied from the current user message. The application combines that label
+    with fixed self-harm or violence wording; `ACTIVE` responses never display the topic label.
+
+35. **Deferred content is state, not permission to bypass routing.** A valid postponed topic is
+    stored only on an assistant `SAFETY` entry with an intent-based safety kind. After resolution,
+    the exact stored message is checked again by deterministic rules and moderation before normal
+    classification. No retrieval, generation, or scheduling occurs while the concern is unresolved.
+
+36. **Resumption follows explicit precedence.** A safe exact continuation in the resolution turn
+    wins over a previously deferred topic. Otherwise the stored topic resumes automatically; if
+    neither exists, the app asks what the user would like to reflect on. A newer valid postponed
+    topic replaces an older one, while reassessment failures preserve the stored topic for retry.
+
+37. **Personalization is presentation-only.** `deferred_topic_label` is normalized to one line,
+    limited to 100 characters, required to begin with “your,” and rejected when it contains control
+    characters, markup-like delimiters, or a question/exclamation ending. It is never used for
+    routing, retrieval, scheduling, or generation. Only the exact `deferred_message` can become the
+    effective downstream request.
+
+38. **Safety-state observability is structural by default.** Routing logs and LangSmith selector
+    spans record the prior kind, follow-up status, resolution/resumption transition, topic presence,
+    label/message lengths, and effective-message length. Topic content remains subject to the
+    existing synthetic-only LangSmith content-capture flag.

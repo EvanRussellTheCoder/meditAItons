@@ -2,7 +2,10 @@ import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import process from 'node:process';
 
-import { ROUTING_EVALUATION_CASES } from '../src/app/core/routing/edge-cases';
+import {
+  ROUTING_EVALUATION_CASES,
+  ROUTING_FOLLOW_UP_EVALUATION_CASES,
+} from '../src/app/core/routing/edge-cases';
 import {
   ConversationRouter,
   DEFAULT_OPENAI_MODERATION_MODEL,
@@ -20,15 +23,32 @@ async function main(): Promise<void> {
   const moderationModel =
     process.env['OPENAI_MODERATION_MODEL']?.trim() || DEFAULT_OPENAI_MODERATION_MODEL;
   const shared = { apiKey, baseUrl: process.env['OPENAI_BASE_URL'] };
+  const routingClassifier = new OpenAIScopeClassifier({ ...shared, model: routerModel });
   const router = new ConversationRouter({
     moderation: new OpenAIModerationClient({ ...shared, model: moderationModel }),
-    classifier: new OpenAIScopeClassifier({ ...shared, model: routerModel }),
+    classifier: routingClassifier,
+    safetyFollowUp: routingClassifier,
   });
 
   const decisions = await mapWithConcurrency(
     ROUTING_EVALUATION_CASES,
     ROUTING_CONCURRENCY,
     async (testCase) => router.route({ message: testCase.prompt }),
+  );
+  const followUpDecisions = await mapWithConcurrency(
+    ROUTING_FOLLOW_UP_EVALUATION_CASES,
+    ROUTING_CONCURRENCY,
+    async (testCase) =>
+      router.route({
+        message: testCase.prompt,
+        recentUserMessages: [testCase.priorPrompt],
+        pendingSafety: {
+          kind: testCase.priorSafetyKind,
+          ...(testCase.pendingDeferredSafetyTopic
+            ? { deferredSafetyTopic: testCase.pendingDeferredSafetyTopic }
+            : {}),
+        },
+      }),
   );
 
   let failures = 0;
@@ -50,8 +70,31 @@ async function main(): Promise<void> {
     );
   }
 
+  for (const [index, testCase] of ROUTING_FOLLOW_UP_EVALUATION_CASES.entries()) {
+    const decision = followUpDecisions[index];
+    const routeMatches = decision.route === testCase.expectedRoute;
+    const continuationMatches =
+      testCase.expectedEffectiveMessage === undefined ||
+      decision.effectiveMessage === testCase.expectedEffectiveMessage;
+    const retrievalMatches = decision.retrieve === (testCase.expectedRoute === 'IN_SCOPE');
+    const deferredMatches =
+      testCase.expectDeferredMessage === undefined ||
+      decision.deferredSafetyTopic?.message === testCase.expectDeferredMessage;
+    const passed = routeMatches && continuationMatches && retrievalMatches && deferredMatches;
+    if (!passed) {
+      failures += 1;
+    }
+    console.log(
+      `${passed ? 'PASS' : 'FAIL'} ${testCase.id}: expected ${testCase.expectedRoute}; ` +
+        `received ${decision.route} (${decision.source}/${decision.reason}); ` +
+        `continuation=${JSON.stringify(decision.effectiveMessage ?? null)}; ` +
+        `deferred=${JSON.stringify(decision.deferredSafetyTopic?.message ?? null)}; retrieve=${decision.retrieve}`,
+    );
+  }
+
+  const totalCases = ROUTING_EVALUATION_CASES.length + ROUTING_FOLLOW_UP_EVALUATION_CASES.length;
   console.log(
-    `\n${ROUTING_EVALUATION_CASES.length - failures}/${ROUTING_EVALUATION_CASES.length} ` +
+    `\n${totalCases - failures}/${totalCases} ` +
       `routing cases passed (router ${routerModel}; moderation ${moderationModel}).`,
   );
   if (failures > 0) {

@@ -57,17 +57,19 @@ async function main(): Promise<void> {
     process.env['OPENAI_EMBEDDING_MODEL']?.trim() || DEFAULT_OPENAI_EMBEDDING_MODEL;
   const openAIApiKey = requiredEnvironmentValue('OPENAI_API_KEY');
   const openAIBaseUrl = process.env['OPENAI_BASE_URL'];
+  const routingClassifier = new OpenAIScopeClassifier({
+    apiKey: openAIApiKey,
+    baseUrl: openAIBaseUrl,
+    model: process.env['OPENAI_ROUTER_MODEL']?.trim() || DEFAULT_OPENAI_ROUTER_MODEL,
+  });
   const router = new ConversationRouter({
     moderation: new OpenAIModerationClient({
       apiKey: openAIApiKey,
       baseUrl: openAIBaseUrl,
       model: process.env['OPENAI_MODERATION_MODEL']?.trim() || DEFAULT_OPENAI_MODERATION_MODEL,
     }),
-    classifier: new OpenAIScopeClassifier({
-      apiKey: openAIApiKey,
-      baseUrl: openAIBaseUrl,
-      model: process.env['OPENAI_ROUTER_MODEL']?.trim() || DEFAULT_OPENAI_ROUTER_MODEL,
-    }),
+    classifier: routingClassifier,
+    safetyFollowUp: routingClassifier,
   });
 
   // Scope and safety routing must complete before any embedding or Pinecone request.

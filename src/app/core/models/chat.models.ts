@@ -1,4 +1,9 @@
-import type { ConversationRoute, RoutingReason } from '../routing/types';
+import type {
+  ConversationRoute,
+  DeferredSafetyTopic,
+  RoutingReason,
+  SafetyKind,
+} from '../routing/types';
 
 export type MessageAuthor = 'marcus' | 'user';
 export type DeliveryStatus = 'sent' | 'read';
@@ -44,6 +49,8 @@ export interface ChatMessage {
   readonly createdAt: Date;
   readonly status?: DeliveryStatus;
   readonly route?: ConversationRoute;
+  readonly safetyKind?: SafetyKind;
+  readonly deferredSafetyTopic?: DeferredSafetyTopic;
   readonly citations?: readonly ChatCitation[];
 }
 
@@ -54,6 +61,9 @@ export interface StoredChatMessage extends Omit<ChatMessage, 'createdAt'> {
 export interface ChatHistoryMessage {
   readonly author: MessageAuthor;
   readonly content: string;
+  readonly route?: ConversationRoute;
+  readonly safetyKind?: SafetyKind;
+  readonly deferredSafetyTopic?: DeferredSafetyTopic;
 }
 
 export interface ChatApiRequest {
@@ -65,6 +75,8 @@ export interface ChatApiRequest {
 export interface ChatApiResponse {
   readonly route: ConversationRoute;
   readonly reason: RoutingReason;
+  readonly safetyKind: SafetyKind | null;
+  readonly deferredSafetyTopic: DeferredSafetyTopic | null;
   readonly message: string;
   readonly citations: readonly ChatCitation[];
   readonly schedulingProposal: MeditationScheduleProposal | null;

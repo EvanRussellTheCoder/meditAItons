@@ -26,9 +26,11 @@ the real routing, Pinecone retrieval, and grounded-answer pipeline.
    content types, and oversized payloads fail before any provider call.
 
 6. **Conversation history is deliberately small and stateless.** The browser sends the eight most
-   recent displayed messages. The router sees only recent user messages; the answer model sees the
-   bounded user and assistant context for follow-up meaning. OpenAI requests set `store: false`, and
-   no conversation is written to `DATABASE_URL` or another server database.
+   recent displayed messages. Assistant entries may include validated route and safety-kind metadata
+   so unresolved self-harm or violence survives reloads without making older danger language sticky
+   forever. The router otherwise sees user text; answer and scheduling models receive bounded text
+   context with routing metadata removed. OpenAI requests set `store: false`, and no conversation is
+   written to `DATABASE_URL` or another server database.
 
 7. **The six-way router remains the only retrieval gate.** The API calls the existing router
    before constructing an embedding or Pinecone client request. `REFRAME`, `OUT_OF_SCOPE`,
@@ -134,3 +136,27 @@ the real routing, Pinecone retrieval, and grounded-answer pipeline.
     and uses it for selector, retrieval, scheduling, and Cal.com stage timings. Pretty routing and
     scheduling summaries explain the selected branches, while error logs omit exception messages,
     credentials, attendee identity, and raw provider responses.
+
+27. **Unanswered safety checks may remember one postponed topic.** A validated assistant safety
+    entry can persist a neutral display label and the exact user substring that introduced the new
+    topic. The label is used only in application-controlled acknowledgement text. Once the user
+    directly resolves the safety check, the exact postponed substring is re-moderated and routed as
+    a fresh request; until then, it cannot reach retrieval, generation, or scheduling.
+
+28. **The API validates safety metadata in both directions.** Every chat response contains nullable
+    `safetyKind` and `deferredSafetyTopic`. The browser accepts a deferred topic only with a
+    self-harm or violence `SAFETY` response. On the next request, the Node API again requires the
+    metadata to belong to an assistant `SAFETY` history entry with an intent-based kind. User
+    entries, non-safety routes, and abuse/eating-disorder/reality-distress entries cannot carry it.
+
+29. **Completed safety text does not pollute later context.** After a normal response follows the
+    safety exchange, `MeditationsChatService` treats that response as a barrier and excludes the
+    completed segment from later classifier context. During automatic resumption, it also strips
+    routing metadata and sends only the exact effective request to scheduling, embedding,
+    retrieval, and grounded generation.
+
+30. **Legacy browser history fails conservatively.** The local-storage key remains
+    `meditations.conversation.v3`, so existing conversations are not deleted. A final historical
+    `SAFETY` response without a kind receives one generic reassessment. Conversations without the
+    new deferred-topic field remain valid, while malformed or inconsistent metadata is rejected at
+    the server boundary.

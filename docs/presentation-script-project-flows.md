@@ -173,6 +173,13 @@ NEEDS_CLARIFICATION -> clarification
 SAFETY -------------> safety response
 ```
 
+```text
+unresolved self-harm/violence
+  ACTIVE ------------> fixed crisis response
+  FOLLOW_UP_REQUIRED -> optional topic acknowledgement + fixed safety question
+  RESOLVED ----------> current continuation, saved topic, or ask what comes next
+```
+
 **Say:**
 
 “Every chat turn is classified before embedding or retrieval. The six public routes are
@@ -180,6 +187,17 @@ SAFETY -------------> safety response
 is normalized with a bounded window of recent user messages. Deterministic checks handle invalid
 input and high-signal urgent safety language first. Remaining messages pass through moderation,
 then a structured scope classifier.
+
+Self-harm and violence also have an explicit multi-turn lifecycle. The assistant's validated route
+metadata marks the concern as pending. A dedicated structured reassessment decides whether danger
+is active, the direct answer is incomplete, or the required present-tense conditions have been
+resolved. Saying only ‘I'm okay’ or changing the subject does not clear the check.
+
+When the user introduces another topic, the model may provide a short neutral label and copy the
+postponed request as an exact substring. The application—not the model—combines that label with the
+fixed safety question. After resolution, a newer request wins; otherwise the exact saved request is
+moderated again and routed normally. Until that point, no embedding, Pinecone, answer generation,
+or scheduling stage runs.
 
 The central authorization rule is simple: `retrieve` is true only for `IN_SCOPE`. A schedule
 request is therefore not merely a different answer prompt—it is a different capability branch.
@@ -196,7 +214,7 @@ ordinary application code.”
 - Decision sequence: `src/app/core/routing/router.ts`, `ConversationRouter.route`
 - Deterministic checks, route-to-response mapping, and the `retrieve` flag:
   `src/app/core/routing/policy.ts`
-- Structured classifier: `src/app/core/routing/openai-scope-classifier.ts`
+- Structured scope and safety-follow-up classifiers: `src/app/core/routing/openai-routing.ts`
 - Branch enforcement: `src/app/core/chat/meditations-chat.ts`,
   `MeditationsChatService.respond`
 
@@ -308,6 +326,12 @@ branch. Scheduling logs show extracted constraints, visible defaults, clarificat
 the confirmation boundary, and the final Cal.com outcome. They exclude API keys, attendee names
 and emails, raw provider bodies, and booking IDs.
 
+For an unresolved safety exchange, selector telemetry also shows the safety kind, follow-up status,
+whether a deferred topic exists, its label and message lengths, the effective resumed-message
+length, and the resolution transition. Content-disabled LangSmith traces keep those fields
+structural: the postponed text itself appears only when synthetic content capture is explicitly
+enabled.
+
 The result is a system whose important decisions are visible at three levels: deterministic corpus
 artifacts, typed runtime branches, and privacy-bounded logs. The design does not ask one language
 model to ingest, retrieve, answer, and schedule. It gives each uncertain model task a narrow schema,
@@ -320,8 +344,8 @@ source’s exact words, and require human confirmation before acting outside the
 
 - Correlated stage and decision logs: `src/app/core/observability/observability.ts`
 - API wiring and request IDs: `scripts/chat-api.ts`
-- Regression coverage: `src/app/core/**/*.spec.ts`, `scripts/routing-test.ts`, and
-  `scripts/pinecone-query-test.ts`
+- Regression coverage: `src/app/core/**/*.spec.ts`, `scripts/test-routing.ts`, and
+  `scripts/query-meditations.ts`
 
 ## Optional live demonstration
 
@@ -332,6 +356,11 @@ source’s exact words, and require human confirmation before acting outside the
    Pinecone stage appears, and a confirmation card opens.
 4. Edit the proposed details. Explain that pressing Confirm is the first point at which Cal.com
    receives a write request. Use a test event type if the demonstration should create a real event.
+5. For a synthetic-only safety demonstration, trigger imminent violence, change the subject to a
+   fear about AI and employment, and show the personalized acknowledgement with no downstream
+   spans. Then provide the complete intent/action/access/proximity denial and show the exact saved
+   topic resume through its normal route. Do not use real personal crisis content in a trace with
+   LangSmith content capture enabled.
 
 ## Why the explanatory comments live where they do
 
